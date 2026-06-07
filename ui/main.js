@@ -89,6 +89,8 @@ tailwind.config = {
 let currentChatId = null;
 let currentMode = 'auto';
 let telemetryOpen = false;
+let pendingAttachments = [];
+let currentTelemetrySetting = 'ON';
 
 // DOM Elements
 const inputEl = document.getElementById('user-input');
@@ -223,11 +225,15 @@ async function uploadFile() {
     if (!window.pywebview) return;
     showLoader();
     try {
-        const resultStr = await window.pywebview.api.api_upload_file();
+        const resultStr = await window.pywebview.api.api_stage_file();
         removeLoader();
         const result = JSON.parse(resultStr);
         if (result.status === 'success') {
-            appendMessage('Система', `Документ **${result.filename}** загружен и интегрирован в контекст чата.`, 'sys');
+            pendingAttachments.push({
+                filename: result.filename,
+                content: result.content
+            });
+            renderAttachmentChips();
         } else if (result.status === 'cancelled') {
             // Cancelled by user
         } else {
@@ -238,6 +244,28 @@ async function uploadFile() {
         appendMessage('Система', `Сбой импорта документа: ${e.toString()}`, 'sys');
     }
 }
+
+function renderAttachmentChips() {
+    const container = document.getElementById('attachment-chips-container');
+    if (!container) return;
+    container.innerHTML = '';
+    pendingAttachments.forEach((file, index) => {
+        const chip = document.createElement('div');
+        chip.className = "flex items-center gap-2 px-2 py-1 border border-primary text-primary font-label-mono text-[10px] bg-primary bg-opacity-5";
+        chip.innerHTML = `
+            <span>[ ${escapeHTML(file.filename)} ]</span>
+            <button onclick="removeAttachment(${index})" class="hover:text-white transition-colors cursor-pointer ml-1 font-bold">✕</button>
+        `;
+        container.appendChild(chip);
+    });
+}
+
+function removeAttachment(index) {
+    pendingAttachments.splice(index, 1);
+    renderAttachmentChips();
+}
+
+window.removeAttachment = removeAttachment;
 
 // Append Chat Message
 function appendMessage(sender, text, type = 'sys') {
@@ -260,6 +288,44 @@ function appendMessage(sender, text, type = 'sys') {
                     ${marked.parse(text)}
                 </div>
             `;
+            
+            // Inject Copy Buttons into pre elements
+            const preElements = wrapper.querySelectorAll('pre');
+            preElements.forEach(pre => {
+                pre.classList.add('relative', 'group');
+                
+                const codeEl = pre.querySelector('code');
+                const codeText = codeEl ? codeEl.innerText : pre.innerText;
+                
+                const copyBtn = document.createElement('button');
+                copyBtn.className = "absolute top-2 right-2 px-2 py-1 bg-[#000000] border border-outline hover:border-primary text-primary font-label-mono text-[10px] opacity-0 group-hover:opacity-100 transition-opacity duration-150 rounded-none z-10 cursor-pointer hover:bg-primary hover:text-on-primary-container";
+                copyBtn.innerText = "[ COPY ]";
+                
+                copyBtn.onclick = async () => {
+                    try {
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            await navigator.clipboard.writeText(codeText);
+                        } else {
+                            const textArea = document.createElement("textarea");
+                            textArea.value = codeText;
+                            textArea.style.position = "fixed";
+                            document.body.appendChild(textArea);
+                            textArea.focus();
+                            textArea.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(textArea);
+                        }
+                        copyBtn.innerText = "[ COPIED ]";
+                        setTimeout(() => {
+                            copyBtn.innerText = "[ COPY ]";
+                        }, 2000);
+                    } catch (err) {
+                        console.error('Failed to copy text: ', err);
+                    }
+                };
+                
+                pre.appendChild(copyBtn);
+            });
         }
     } else {
         // User message style
@@ -414,6 +480,17 @@ async function sendToAgent() {
 
     const profile = currentMode;
     appendMessage('Пользователь', prompt, 'user');
+    
+    // Construct final prompt with attachment content if any
+    let finalPrompt = prompt;
+    if (pendingAttachments.length > 0) {
+        pendingAttachments.forEach(file => {
+            finalPrompt += `\n\n[Вложение: ${file.filename}]\n${file.content}`;
+        });
+        pendingAttachments = [];
+        renderAttachmentChips();
+    }
+    
     inputEl.value = '';
     inputEl.style.height = '48px';
     
@@ -424,7 +501,7 @@ async function sendToAgent() {
     showLoader();
 
     try {
-        const result = await window.pywebview.api.run_agent(profile, prompt);
+        const result = await window.pywebview.api.run_agent(profile, finalPrompt);
         removeLoader();
         appendMessage('Orange', result, 'sys');
         refreshChatList();
@@ -440,6 +517,116 @@ async function sendToAgent() {
         scrollToBottom();
     }
 }
+
+// Global Settings Management
+async function openSettings() {
+    if (!window.pywebview) return;
+    try {
+        const settingsStr = await window.pywebview.api.api_get_settings();
+        const settings = JSON.parse(settingsStr);
+        
+        if (settings.status === 'error') {
+            appendMessage('Система', `Не удалось загрузить настройки: ${settings.message}`, 'sys');
+            return;
+        }
+        
+        const tokenInput = document.getElementById('setting-auth-token');
+        if (tokenInput) {
+            tokenInput.value = settings.auth_token || '';
+        }
+        
+        updateTelemetrySettingsUI(settings.telemetry_stream || 'ON');
+        
+        openModal('settings-modal');
+    } catch (e) {
+        console.error("Error opening settings: ", e);
+    }
+}
+
+function closeSettings() {
+    closeModal('settings-modal');
+}
+
+async function saveSettings() {
+    if (!window.pywebview) return;
+    try {
+        const tokenInput = document.getElementById('setting-auth-token');
+        const tokenValue = tokenInput ? tokenInput.value : '';
+        
+        const settings = {
+            auth_token: tokenValue,
+            telemetry_stream: currentTelemetrySetting
+        };
+        
+        const resultStr = await window.pywebview.api.api_save_settings(settings);
+        const result = JSON.parse(resultStr);
+        if (result.status === 'success') {
+            closeSettings();
+            appendMessage('Система', 'Настройки успешно сохранены.', 'sys');
+        } else {
+            appendMessage('Система', `Ошибка при сохранении настроек: ${result.message}`, 'sys');
+        }
+    } catch (e) {
+        console.error("Error saving settings: ", e);
+        appendMessage('Система', `Сбой сохранения настроек: ${e.toString()}`, 'sys');
+    }
+}
+
+function updateTelemetrySettingsUI(state) {
+    currentTelemetrySetting = state;
+    const btnOn = document.getElementById('btn-telemetry-on');
+    const btnOff = document.getElementById('btn-telemetry-off');
+    if (btnOn && btnOff) {
+        if (state === 'ON') {
+            btnOn.className = "px-3 py-1 bg-primary text-on-primary text-[10px] font-bold";
+            btnOff.className = "px-3 py-1 text-on-surface text-[10px]";
+        } else {
+            btnOn.className = "px-3 py-1 text-on-surface text-[10px]";
+            btnOff.className = "px-3 py-1 bg-primary text-on-primary text-[10px] font-bold";
+        }
+    }
+}
+
+// System Panic & Command Override
+function triggerSystemPanic(errorText) {
+    const textEl = document.getElementById('system-panic-text');
+    if (textEl) {
+        textEl.innerText = errorText;
+    }
+    const modal = document.getElementById('system-panic-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.style.zIndex = '999999';
+    }
+}
+
+function showExecutionOverride(commandText) {
+    const container = document.getElementById('execution-command-container');
+    if (container) {
+        container.innerText = commandText;
+    }
+    const modal = document.getElementById('execution-override-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.style.zIndex = '99999';
+    }
+}
+
+function handleOverrideResponse(approved) {
+    closeModal('execution-override-modal');
+    if (window.pywebview) {
+        window.pywebview.api.api_handle_override_response(approved);
+    }
+}
+
+// Exporting functions to global window context
+window.openSettings = openSettings;
+window.closeSettings = closeSettings;
+window.saveSettings = saveSettings;
+window.updateTelemetrySettingsUI = updateTelemetrySettingsUI;
+window.triggerSystemPanic = triggerSystemPanic;
+window.showExecutionOverride = showExecutionOverride;
+window.handleOverrideResponse = handleOverrideResponse;
 
 // Initialize Application UI
 function initUI() {

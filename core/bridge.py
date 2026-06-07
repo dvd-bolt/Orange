@@ -6,6 +6,22 @@ from core.dependencies import OrangeDeps
 from core import db
 from core import tools
 
+import functools
+import json
+
+def settings_error_handler(func):
+    """Декоратор для обработки ошибок методов настроек с возвратом JSON"""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            res = func(*args, **kwargs)
+            if isinstance(res, dict):
+                return json.dumps(res)
+            return json.dumps({"status": "success", "result": res})
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e)})
+    return wrapper
+
 class BridgeAPI:
     """Класс-мост, функции которого будут доступны внутри JavaScript окна программы"""
     def __init__(self, background_loop: asyncio.AbstractEventLoop, deps: OrangeDeps):
@@ -13,6 +29,7 @@ class BridgeAPI:
         self._background_loop = background_loop
         self._deps = deps
         self.current_chat_id = None
+        self._override_future = None
 
     # --- API для работы с чатами из JS ---
     
@@ -49,10 +66,10 @@ class BridgeAPI:
         except Exception as e:
             return f"Ошибка экспорта: {str(e)}"
 
-    def api_upload_file(self) -> str:
+    def api_stage_file(self) -> str:
         """
-        Открывает нативное диалоговое окно выбора файла для импорта текстовых документов (.txt, .csv, .md)
-        и инжектирует их содержимое в текущий чат как невидимый контекст.
+        Открывает нативное диалоговое окно выбора файла для импорта текстовых документов (.txt, .csv, .md, .pdf)
+        и возвращает JSON с содержимым файла без записи в БД.
         """
         import webview
         import os
@@ -60,9 +77,6 @@ class BridgeAPI:
         
         if not self._window:
             return json.dumps({"status": "error", "message": "Окно приложения не инициализировано"})
-            
-        if not self.current_chat_id:
-            self.current_chat_id = db.create_chat("Новый диалог")
             
         try:
             file_types = ('Текстовые и PDF файлы (*.txt;*.csv;*.md;*.pdf)', 'Все файлы (*.*)')
@@ -98,15 +112,8 @@ class BridgeAPI:
                 with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
                     content = f.read()
                 
-            # Инжектируем служебный контекст
-            db.add_message(
-                self.current_chat_id,
-                "user",
-                f"[Служебный системный контекст: Загружен документ '{filename}']\n{content}"
-            )
-            
-            print(f"[Bridge] Файл {filename} успешно импортирован в чат {self.current_chat_id}")
-            return json.dumps({"status": "success", "filename": filename})
+            print(f"[Bridge] Файл {filename} успешно подготовлен (staged)")
+            return json.dumps({"status": "success", "filename": filename, "content": content})
             
         except Exception as e:
             print(f"[Bridge Error] Ошибка импорта файла: {e}")
@@ -254,3 +261,66 @@ class BridgeAPI:
             if self._window:
                 safe_err = str(e).replace('\\', '\\\\').replace('`', '\\`')
                 self._window.evaluate_js(f"appendMessage('Ошибка Фона', `Сбой фонового анализа: {safe_err}`, 'sys')")
+
+    # --- API для настроек и системных вызовов (Panic/Override) ---
+    
+    @settings_error_handler
+    def api_get_settings(self) -> dict:
+        """Считывает настройки из config/settings.json"""
+        import os
+        path = 'config/settings.json'
+        if not os.path.exists(path):
+            default_config = {"auth_token": "************************", "telemetry_stream": "ON"}
+            os.makedirs('config', exist_ok=True)
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(default_config, f, indent=4)
+            return default_config
+        
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+
+    @settings_error_handler
+    def api_save_settings(self, data) -> bool:
+        """Сохраняет настройки в config/settings.json"""
+        import os
+        path = 'config/settings.json'
+        if isinstance(data, str):
+            data = json.loads(data)
+        os.makedirs('config', exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+        print("[Bridge] Настройки сохранены в config/settings.json")
+        return True
+
+    def api_handle_override_response(self, approved: bool):
+        """Вызывается из JS при клике на Permit/Deny в окне подтверждения команды"""
+        if self._override_future and not self._override_future.done():
+            self._override_future.set_result(approved)
+
+    async def request_execution_override(self, command: str) -> bool:
+        """
+        Асинхронно запрашивает подтверждение выполнения команды у пользователя.
+        Вызывает JS оверлей и ожидает решения.
+        """
+        if not self._window:
+            print("[Bridge] Окно не инициализировано, автоотклонение команды.")
+            return False
+
+        self._override_future = self._background_loop.create_future()
+        safe_cmd = command.replace('\\', '\\\\').replace('`', '\\`').replace('$', '\\$')
+        
+        # Показываем оверлей в JS
+        self._window.evaluate_js(f"showExecutionOverride(`{safe_cmd}`)")
+        
+        try:
+            approved = await self._override_future
+            return approved
+        except Exception as e:
+            print(f"[Bridge Error] Ошибка ожидания подтверждения: {e}")
+            return False
+
+    def trigger_panic(self, error_message: str):
+        """Вызывает оверлей критической ошибки (системной паники) в JS"""
+        if self._window:
+            safe_msg = error_message.replace('\\', '\\\\').replace('`', '\\`').replace('$', '\\$')
+            self._window.evaluate_js(f"triggerSystemPanic(`{safe_msg}`)")

@@ -50,7 +50,7 @@
 
         <!-- Footer -->
         <div class="border-t border-outline p-2">
-            <button onclick="openModal('global-settings-modal')" class="w-full text-left font-label-mono text-label-mono text-on-surface hover:text-primary px-4 py-3 hover:bg-surface-variant flex items-center gap-3 transition-colors">
+            <button onclick="openSettings()" class="w-full text-left font-label-mono text-label-mono text-on-surface hover:text-primary px-4 py-3 hover:bg-surface-variant flex items-center gap-3 transition-colors">
                 <span class="material-symbols-outlined text-[16px]">settings</span>
                 SETTINGS
             </button>
@@ -126,16 +126,21 @@
 
             <!-- Footer Input -->
             <footer class="p-gutter border-t border-outline bg-background shrink-0 w-full">
-                <div class="max-w-5xl mx-auto flex gap-4 items-end">
-                    <div class="flex-1 relative flex items-end">
-                        <button onclick="openModal('attachment-config-modal')" class="absolute left-3 bottom-3 text-on-background hover:text-primary transition-colors">
-                            <span class="material-symbols-outlined">attach_file</span>
+                <div class="max-w-5xl mx-auto flex flex-col gap-2">
+                    <!-- Chips Container for staged files -->
+                    <div id="attachment-chips-container" class="flex flex-wrap gap-2 w-full empty:hidden"></div>
+                    
+                    <div class="w-full flex gap-4 items-end">
+                        <div class="flex-1 relative flex items-end">
+                            <button onclick="uploadFile()" class="absolute left-3 bottom-3 text-on-background hover:text-primary transition-colors" title="Stage document (.txt, .md, .csv, .pdf)">
+                                <span class="material-symbols-outlined">attach_file</span>
+                            </button>
+                            <textarea id="user-input" class="w-full bg-transparent border border-transparent border-b-outline focus:border-primary focus:ring-1 focus:ring-primary text-on-background font-body-lg resize-none py-3 pl-10 pr-4 placeholder-on-background placeholder-opacity-30 transition-all neon-focus" placeholder="&gt; ENTER DIRECTIVE..." rows="1" style="height:48px;overflow-y:hidden;"></textarea>
+                        </div>
+                        <button id="send-btn" onclick="sendToAgent()" class="bg-transparent border border-primary text-primary hover:bg-primary hover:text-on-primary-container font-label-caps text-label-caps px-6 py-3 uppercase transition-all shrink-0 h-[48px] flex items-center neon-hover">
+                            INITIATE
                         </button>
-                        <textarea id="user-input" class="w-full bg-transparent border border-transparent border-b-outline focus:border-primary focus:ring-1 focus:ring-primary text-on-background font-body-lg resize-none py-3 pl-10 pr-4 placeholder-on-background placeholder-opacity-30 transition-all neon-focus" placeholder="&gt; ENTER DIRECTIVE..." rows="1" style="height:48px;overflow-y:hidden;"></textarea>
                     </div>
-                    <button id="send-btn" onclick="sendToAgent()" class="bg-transparent border border-primary text-primary hover:bg-primary hover:text-on-primary-container font-label-caps text-label-caps px-6 py-3 uppercase transition-all shrink-0 h-[48px] flex items-center neon-hover">
-                        INITIATE
-                    </button>
                 </div>
             </footer>
         </main>
@@ -211,11 +216,11 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
     <!-- ========================================== -->
 
     <!-- 1. GLOBAL_SETTINGS Modal -->
-    <div id="global-settings-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
+    <div id="settings-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
         <div class="w-full max-w-md border border-outline-variant p-6 bg-surface flex flex-col gap-4 relative">
             <div class="flex justify-between items-center border-b border-outline-variant pb-2">
                 <h2 class="font-label-caps text-label-caps text-primary">[GLOBAL_SETTINGS]</h2>
-                <button onclick="closeModal('global-settings-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+                <button onclick="closeSettings()" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
             </div>
             <div class="flex gap-4 border-b border-outline-variant pb-2">
                 <span class="text-primary font-label-mono text-label-mono border-b border-primary">API &amp; AUTH</span>
@@ -225,15 +230,19 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
             <div class="space-y-4">
                 <div>
                     <label class="text-[10px] text-on-surface-variant block mb-1">AUTH_TOKEN_HASH</label>
-                    <input class="w-full bg-transparent border-0 border-b border-outline-variant text-body-sm font-label-mono py-1 focus:ring-0" type="password" value="************************"/>
+                    <input id="setting-auth-token" class="w-full bg-transparent border-0 border-b border-outline-variant text-body-sm font-label-mono py-1 focus:ring-0" type="password" value="************************"/>
                 </div>
                 <div class="flex justify-between items-center py-2">
                     <span class="font-label-mono text-label-mono">TELEMETRY_STREAM</span>
                     <div class="flex border border-outline-variant">
-                        <button class="px-3 py-1 bg-primary text-on-primary text-[10px] font-bold">ON</button>
-                        <button class="px-3 py-1 text-on-surface text-[10px]">OFF</button>
+                        <button id="btn-telemetry-on" onclick="updateTelemetrySettingsUI('ON')" class="px-3 py-1 bg-primary text-on-primary text-[10px] font-bold">ON</button>
+                        <button id="btn-telemetry-off" onclick="updateTelemetrySettingsUI('OFF')" class="px-3 py-1 text-on-surface text-[10px]">OFF</button>
                     </div>
                 </div>
+            </div>
+            <div class="flex gap-2 mt-4">
+                <button onclick="closeSettings()" class="flex-1 py-2 border border-outline-variant text-on-surface font-bold text-label-caps hover:bg-surface-variant transition-colors">CANCEL</button>
+                <button onclick="saveSettings()" class="flex-1 py-2 bg-primary text-on-primary font-bold text-label-caps hover:bg-primary/80 transition-colors">SAVE</button>
             </div>
         </div>
     </div>
@@ -272,7 +281,7 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
     </div>
 
     <!-- 3. EXECUTION_OVERRIDE Modal -->
-    <div id="execution-override-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
+    <div id="execution-override-modal" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
         <div class="w-full max-w-lg border border-primary p-6 bg-surface flex flex-col gap-4 relative">
             <div class="flex justify-between items-center border-b border-outline-variant pb-2">
                 <div class="flex items-center gap-2 text-primary">
@@ -281,25 +290,21 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
                 </div>
                 <button onclick="closeModal('execution-override-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
             </div>
-            <div class="bg-[#0A0A0A] border border-outline-variant p-3 font-label-mono text-[10px] overflow-x-auto">
-                <div class="text-error">- rm -rf /kernel/orchestrator.bin</div>
-                <div class="text-[#00FF00]">+ patch /kernel/orchestrator.bin --v-2.0.4</div>
+            <div id="execution-command-container" class="bg-[#0A0A0A] border border-outline-variant p-3 font-label-mono text-[10px] overflow-x-auto whitespace-pre-wrap break-all text-error leading-relaxed">
+                <!-- Command will be inserted here -->
             </div>
             <div class="flex gap-2">
-                <button onclick="closeModal('execution-override-modal')" class="flex-1 py-3 border border-on-background text-on-background font-bold text-label-caps hover:bg-on-background hover:text-background transition-all">DENY</button>
-                <button onclick="closeModal('execution-override-modal')" class="flex-1 py-3 bg-primary text-on-primary font-bold text-label-caps hover:bg-primary/80 transition-all">PERMIT</button>
+                <button onclick="handleOverrideResponse(false)" class="flex-1 py-3 border border-on-background text-on-background font-bold text-label-caps hover:bg-on-background hover:text-background transition-all">DENY</button>
+                <button onclick="handleOverrideResponse(true)" class="flex-1 py-3 bg-primary text-on-primary font-bold text-label-caps hover:bg-primary/80 transition-all">PERMIT</button>
             </div>
         </div>
     </div>
 
     <!-- 4. SYSTEM_PANIC (OVERLAY) - Opaque black layout-blocker -->
-    <div id="system-panic-modal" class="fixed inset-0 bg-black flex items-center justify-center z-[100] backdrop-blur-sm hidden">
-        <div class="text-center p-12 border-4 border-primary bg-background">
-            <h1 class="text-headline-lg font-headline-lg text-primary mb-4 animate-pulse">FATAL_ERROR: SQLITE_LOCKED</h1>
-            <p class="font-label-mono text-label-mono text-white max-w-md mx-auto">THE DATABASE IS CURRENTLY ENGAGED IN A HIGH-PRIORITY READ/WRITE CYCLE. ALL OVERRIDES ARE TEMPORARILY SUSPENDED.</p>
-            <div class="mt-8">
-                <button class="px-8 py-3 bg-primary text-on-primary font-bold text-label-caps hover:bg-primary/80 transition-all" onclick="closePanic()">BYPASS_LOCK</button>
-            </div>
+    <div id="system-panic-modal" class="fixed inset-0 bg-black flex items-center justify-center z-[99999] hidden">
+        <div class="text-center p-12 border-4 border-primary bg-background max-w-xl">
+            <h1 class="text-headline-lg font-headline-lg text-primary mb-4 animate-pulse">CRITICAL KERNEL PANIC</h1>
+            <p id="system-panic-text" class="font-label-mono text-label-mono text-white max-w-md mx-auto break-words whitespace-pre-wrap">THE SYSTEM HAS ENCOUNTERED A FATAL KERNEL EXCEPTION.</p>
         </div>
     </div>
 
