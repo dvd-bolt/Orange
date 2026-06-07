@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ORANGE OS - Primary Terminal</title>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-fixed-dim": "#ffb596",
+                        "error-container": "#93000a",
+                        "outline-variant": "#5a4136",
+                        "secondary-fixed-dim": "#c6c6c7",
+                        "on-surface": "#e2e2e2",
+                        "on-error-container": "#ffdad6",
+                        "secondary": "#c6c6c7",
+                        "on-primary-fixed": "#360f00",
+                        "surface-container-high": "#2a2a2a",
+                        "surface-container-low": "#1b1b1b",
+                        "surface-tint": "#ffb596",
+                        "surface-container-highest": "#353535",
+                        "on-tertiary-container": "#2f2f2f",
+                        "surface-dim": "#131313",
+                        "background": "#000000",
+                        "primary-container": "#ff6600",
+                        "inverse-surface": "#e2e2e2",
+                        "on-primary-fixed-variant": "#7c2e00",
+                        "on-background": "#e2e2e2",
+                        "on-secondary-fixed": "#1a1c1c",
+                        "on-secondary-fixed-variant": "#454747",
+                        "inverse-on-surface": "#303030",
+                        "on-primary-container": "#000000",
+                        "outline": "#262626",
+                        "on-primary": "#581e00",
+                        "surface": "#000000",
+                        "primary": "#ff6600",
+                        "tertiary": "#c8c6c5",
+                        "on-secondary-container": "#b4b5b5",
+                        "surface-container-lowest": "#0e0e0e",
+                        "on-surface-variant": "#e3bfb1",
+                        "surface-variant": "#262626",
+                        "surface-container": "#1f1f1f",
+                        "secondary-container": "#454747",
+                        "on-secondary": "#2f3131",
+                        "tertiary-fixed": "#e4e2e1",
+                        "on-tertiary-fixed-variant": "#474746",
+                        "inverse-primary": "#a33e00",
+                        "tertiary-container": "#989696",
+                        "error": "#ffb4ab",
+                        "surface-bright": "#393939",
+                        "on-error": "#690005",
+                        "secondary-fixed": "#e2e2e2",
+                        "on-tertiary-fixed": "#1b1c1c",
+                        "tertiary-fixed-dim": "#c8c6c5",
+                        "primary-fixed": "#ffdbcd",
+                        "on-tertiary": "#303030"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-md": "1.5rem",
+                        "gutter": "1rem",
+                        "margin-page": "2rem",
+                        "stack-sm": "0.5rem",
+                        "sidebar-width": "288px"
+                    },
+                    "fontFamily": {
+                        "body-lg": ["JetBrains Mono"],
+                        "label-caps": ["JetBrains Mono"],
+                        "label-mono": ["JetBrains Mono"],
+                        "headline-md": ["JetBrains Mono"],
+                        "headline-lg": ["JetBrains Mono"],
+                        "body-sm": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "400" }],
+                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.15em", "fontWeight": "800" }],
+                        "label-mono": ["11px", { "lineHeight": "14px", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400" }]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body { background-color: #000000; color: #FFFFFF; font-family: 'JetBrains Mono', monospace; }
+        .crt-scanline {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+            z-index: 50;
+        }
+        
+        .ping-square {
+            animation: pulse 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(2.5); opacity: 0; }
+        }
+
+        .animate-blink {
+            animation: blink 1s step-end infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        .neon-hover:hover {
+            box-shadow: 0 0 10px #FF6600;
+        }
+
+        .neon-focus:focus {
+            box-shadow: 0 0 10px #FF6600;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background h-screen overflow-hidden flex font-body-lg">
+<div class="crt-scanline"></div>
+<!-- SideNavBar -->
+<nav class="fixed left-0 top-0 h-full w-sidebar-width border-r border-outline bg-background flex flex-col z-20">
+<!-- Header -->
+<div class="p-gutter border-b border-outline">
+<div class="flex items-center gap-3 mb-2">
+<div class="relative w-2 h-2">
+<div class="absolute inset-0 bg-primary ping-square opacity-75"></div>
+<div class="relative w-2 h-2 bg-primary"></div>
+</div>
+<h1 class="font-headline-md text-headline-md text-on-background tracking-widest uppercase">ORANGE</h1>
+</div>
+<div class="font-label-mono text-label-mono text-primary">Memory_Link // v4.0</div>
+</div>
+<!-- CTA -->
+<div class="p-gutter">
+<button class="w-full border border-primary bg-transparent hover:bg-primary hover:text-on-primary-container text-primary font-label-caps text-label-caps py-2 px-4 transition-all uppercase flex justify-center items-center gap-2 neon-hover">
+<span class="material-symbols-outlined text-[16px]">add</span>
+                NEW_SESSION
+            </button>
+</div>
+<!-- Tabs -->
+<div class="flex-1 overflow-y-auto py-2">
+<!-- Active Item -->
+<button class="w-full text-left font-label-mono text-label-mono text-on-primary-container bg-primary-container bg-opacity-20 border-l-2 border-primary px-4 py-3 flex items-center gap-3 group relative">
+<span class="material-symbols-outlined text-[16px]">terminal</span>
+<span class="flex-1">SESSION_STREAM</span>
+<span class="opacity-0 group-hover:opacity-100 transition-opacity">📌</span>
+</button>
+<!-- Inactive Items -->
+<button class="w-full text-left font-label-mono text-label-mono text-on-surface hover:text-primary px-4 py-3 hover:bg-surface-variant flex items-center gap-3 transition-colors group relative">
+<span class="material-symbols-outlined text-[16px]">account_tree</span>
+<span class="flex-1">KNOWLEDGE_GRAPH</span>
+<span class="opacity-0 group-hover:opacity-100 transition-opacity">📌</span>
+</button>
+<button class="w-full text-left font-label-mono text-label-mono text-on-surface hover:text-primary px-4 py-3 hover:bg-surface-variant flex items-center gap-3 transition-colors group relative">
+<span class="material-symbols-outlined text-[16px]">receipt_long</span>
+<span class="flex-1">SYSTEM_LOGS</span>
+<span class="opacity-0 group-hover:opacity-100 transition-opacity">📌</span>
+</button>
+<button class="w-full text-left font-label-mono text-label-mono text-on-surface hover:text-primary px-4 py-3 hover:bg-surface-variant flex items-center gap-3 transition-colors group relative">
+<span class="material-symbols-outlined text-[16px]">inventory_2</span>
+<span class="flex-1">ARCHIVE</span>
+<span class="opacity-0 group-hover:opacity-100 transition-opacity">📌</span>
+</button>
+</div>
+<!-- Footer -->
+<div class="border-t border-outline p-2">
+<button class="w-full text-left font-label-mono text-label-mono text-on-surface hover:text-primary px-4 py-3 hover:bg-surface-variant flex items-center gap-3 transition-colors">
+<span class="material-symbols-outlined text-[16px]">settings</span>
+                SETTINGS
+            </button>
+<button class="w-full text-left font-label-mono text-label-mono text-on-surface hover:text-primary px-4 py-3 hover:bg-surface-variant flex items-center gap-3 transition-colors">
+<span class="material-symbols-outlined text-[16px]">power_settings_new</span>
+                TERMINATE
+            </button>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 ml-sidebar-width flex flex-col h-full bg-background relative z-10">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center h-20 px-margin-page border-b border-outline bg-background shrink-0">
+<!-- Left Actions -->
+<button class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-3 py-1.5 hover:border-primary">
+<span class="material-symbols-outlined text-[16px]">description</span>
+                EXPORT_TO_OBSIDIAN
+            </button>
+<!-- Mode Selector -->
+<div class="flex border border-outline">
+<button class="font-label-caps text-label-caps bg-primary text-on-primary-container px-4 py-2 border-r border-outline">AUTO</button>
+<button class="font-label-caps text-label-caps text-on-background hover:text-primary hover:border-primary border border-transparent border-r-outline px-4 py-2 transition-colors relative hover:z-10 hover:ring-1 hover:ring-primary hover:bg-transparent">BASE</button>
+<button class="font-label-caps text-label-caps text-on-background hover:text-primary hover:border-primary border border-transparent border-r-outline px-4 py-2 transition-colors relative hover:z-10 hover:ring-1 hover:ring-primary hover:bg-transparent">DEEP RESEARCH</button>
+<button class="font-label-caps text-label-caps text-on-background hover:text-primary hover:border-primary border border-transparent px-4 py-2 transition-colors relative hover:z-10 hover:ring-1 hover:ring-primary hover:bg-transparent">CODER</button>
+</div>
+<div class="w-[180px]"></div> <!-- Spacer to balance left action -->
+</header>
+<!-- Chat Canvas -->
+<div class="flex-1 overflow-y-auto p-margin-page space-y-stack-md flex flex-col">
+<!-- User Block -->
+<div class="border border-on-background p-4 max-w-4xl self-end w-full">
+<div class="font-label-caps text-label-caps text-on-background mb-4 uppercase border-b border-outline pb-2 inline-block">USER_DIRECTIVE</div>
+<div class="font-body-lg text-body-lg text-on-background">
+                    Analyze the current network topology and identify potential bottleneck vectors in the secondary subnet. Output a python script to monitor these nodes.
+                </div>
+</div>
+<!-- Agent Block -->
+<div class="border border-primary p-4 max-w-4xl self-start w-full bg-primary bg-opacity-[0.02]">
+<div class="font-label-caps text-label-caps text-primary mb-4 uppercase border-b border-outline pb-2 flex items-center gap-2">
+<span class="w-2 h-2 bg-primary"></span>
+                    AGENT_RESPONSE
+                </div>
+<div class="font-body-lg text-body-lg text-on-background space-y-4">
+<p>Analysis complete. Secondary subnet (10.0.2.0/24) exhibits high latency on nodes .45 and .112. Generating monitoring payload.</p>
+<!-- Code Block -->
+<div class="bg-background border border-outline p-4 relative">
+<div class="absolute top-0 right-0 bg-outline px-2 py-1 font-label-mono text-label-mono text-on-background">PYTHON</div>
+<pre class="font-label-mono text-label-mono text-primary overflow-x-auto pt-4"><code>
+import socket
+import time
+
+TARGET_NODES = ["10.0.2.45", "10.0.2.112"]
+THRESHOLD_MS = 150
+
+def ping_node(ip):
+    # Simulated ping sequence
+    start = time.time()
+    socket.setdefaulttimeout(1)
+    try:
+        # Mock connection attempt
+        time.sleep(0.08)
+        return True
+    except socket.timeout:
+        return False
+
+def init_monitor():
+    print(f"[{time.time()}] INIT MONITORING SEQ")
+    for node in TARGET_NODES:
+        status = ping_node(node)
+        print(f"NODE: {node} | STATUS: {'OK' if status else 'FAIL'}")
+
+if __name__ == "__main__":
+    init_monitor()
+                        </code></pre>
+</div>
+</div>
+</div>
+<!-- System Alert -->
+<div class="font-label-mono text-label-mono text-primary flex items-center gap-2 max-w-4xl self-center w-full justify-center opacity-80">
+<span class="material-symbols-outlined text-[14px]">info</span>
+                System: Document [network_topology_v2.md] successfully integrated.
+            </div>
+<!-- Loader -->
+<div class="border border-primary p-4 max-w-4xl self-start w-full border-dashed">
+<div class="flex items-center gap-3 font-label-mono text-label-mono text-primary">
+<span class="material-symbols-outlined text-[16px] animate-spin">sync</span>
+<span class="animate-blink">CORE_PROCESSING_SEQ...</span>
+</div>
+</div>
+</div>
+<!-- Footer Input -->
+<footer class="p-gutter border-t border-outline bg-background shrink-0">
+<div class="max-w-5xl mx-auto flex gap-4 items-end">
+<div class="flex-1 relative flex items-end">
+<button class="absolute left-3 bottom-3 text-on-background hover:text-primary transition-colors">
+<span class="material-symbols-outlined">attach_file</span>
+</button>
+<textarea class="w-full bg-transparent border border-transparent border-b-outline focus:border-primary focus:ring-1 focus:ring-primary text-on-background font-body-lg resize-none py-3 pl-10 pr-4 placeholder-on-background placeholder-opacity-30 transition-all neon-focus" placeholder="&gt; ENTER DIRECTIVE..." rows="1"></textarea>
+</div>
+<button class="bg-transparent border border-primary text-primary hover:bg-primary hover:text-on-primary-container font-label-caps text-label-caps px-6 py-3 uppercase transition-all shrink-0 h-[48px] flex items-center neon-hover">
+                    INITIATE
+                </button>
+</div>
+</footer>
+</main>
+<script>
+        // Auto-resize textarea
+        const tx = document.getElementsByTagName("textarea");
+        for (let i = 0; i < tx.length; i++) {
+            tx[i].setAttribute("style", "height:" + (tx[i].scrollHeight) + "px;overflow-y:hidden;");
+            tx[i].addEventListener("input", OnInput, false);
+        }
+
+        function OnInput() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + "px";
+        }
+    </script>
+</body></html>

@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>ORANGE OS - Primary Terminal</title>
+    <!-- Material Symbols and Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100..900&amp;display=swap" rel="stylesheet"/>
+    
+    <!-- Custom CSS Styles -->
+    <link rel="stylesheet" href="style.css"/>
+
+    <!-- Markdown Parser Library -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+</head>
+<body class="bg-background text-on-background h-screen overflow-hidden flex font-body-lg">
+    <div class="crt-scanline"></div>
+    <div class="scanline"></div>
+
+    <!-- SideNavBar -->
+    <nav class="h-full w-sidebar-width border-r border-outline bg-background flex flex-col z-20 shrink-0">
+        <!-- Header -->
+        <div class="p-gutter border-b border-outline">
+            <div class="flex items-center gap-3 mb-2">
+                <div class="relative w-2 h-2">
+                    <div class="absolute inset-0 bg-primary ping-square opacity-75"></div>
+                    <div class="relative w-2 h-2 bg-primary"></div>
+                </div>
+                <h1 class="font-headline-md text-headline-md text-on-background tracking-widest uppercase">ORANGE</h1>
+            </div>
+            <div class="font-label-mono text-label-mono text-primary">Memory_Link // v4.0</div>
+        </div>
+
+        <!-- CTA -->
+        <div class="p-gutter">
+            <button onclick="createNewChat()" class="w-full border border-primary bg-transparent hover:bg-primary hover:text-on-primary-container text-primary font-label-caps text-label-caps py-2 px-4 transition-all uppercase flex justify-center items-center gap-2 neon-hover">
+                <span class="material-symbols-outlined text-[16px]">add</span>
+                NEW_SESSION
+            </button>
+        </div>
+
+        <!-- Dynamic Chats List Container -->
+        <div class="flex-1 overflow-y-auto py-2 space-y-1" id="chat-list">
+            <!-- Loaded dynamically by Javascript -->
+        </div>
+
+        <!-- Footer -->
+        <div class="border-t border-outline p-2">
+            <button onclick="openModal('global-settings-modal')" class="w-full text-left font-label-mono text-label-mono text-on-surface hover:text-primary px-4 py-3 hover:bg-surface-variant flex items-center gap-3 transition-colors">
+                <span class="material-symbols-outlined text-[16px]">settings</span>
+                SETTINGS
+            </button>
+            <button onclick="openPanic()" class="w-full text-left font-label-mono text-label-mono text-on-surface hover:text-primary px-4 py-3 hover:bg-surface-variant flex items-center gap-3 transition-colors">
+                <span class="material-symbols-outlined text-[16px]">power_settings_new</span>
+                TERMINATE
+            </button>
+        </div>
+    </nav>
+
+    <!-- Main Layout Wrapper -->
+    <div class="flex-1 flex h-full relative z-10 overflow-hidden">
+        <!-- Main Content Area -->
+        <main class="flex-1 min-w-0 flex flex-col h-full bg-background relative overflow-hidden transition-all duration-300 mr-0" id="main-content">
+            <!-- Toast Notification (OBSIDIAN_LINK) -->
+            <div class="absolute top-4 right-4 z-50 border border-primary bg-background p-3 w-80 shadow-lg rounded-none toast-enter hidden" id="toast-notification">
+                <div class="font-label-mono text-xs text-white mb-2 tracking-widest uppercase">COMPILING_MARKDOWN_SEQ...</div>
+                <div class="flex gap-1 h-2 mb-2 border border-outline">
+                    <div class="flex-1 bg-primary"></div>
+                    <div class="flex-1 bg-primary"></div>
+                    <div class="flex-1 bg-primary"></div>
+                    <div class="flex-1 bg-primary"></div>
+                    <div class="flex-1 bg-transparent"></div>
+                </div>
+                <div class="font-label-mono text-xs text-primary animate-pulse">[+] FILE_SYNCED: log_export_v4.md</div>
+            </div>
+
+            <!-- TopAppBar -->
+            <header class="flex justify-between items-center h-20 px-margin-page border-b border-outline bg-background shrink-0 w-full">
+                <!-- Left Actions -->
+                <button onclick="exportChat()" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-3 py-1.5 hover:border-primary">
+                    <span class="material-symbols-outlined text-[16px]">description</span>
+                    EXPORT_TO_OBSIDIAN
+                </button>
+
+                <!-- Mode Selector -->
+                <div class="flex border border-outline" id="mode-selector">
+                    <button onclick="setMode('auto')" id="mode-auto" class="mode-btn font-label-caps text-label-caps bg-primary text-on-primary-container px-4 py-2 border-r border-outline relative z-10">AUTO</button>
+                    <button onclick="setMode('base')" id="mode-base" class="mode-btn font-label-caps text-label-caps text-on-background hover:text-primary hover:border-primary border border-transparent border-r-outline px-4 py-2 transition-colors relative hover:z-10 hover:ring-1 hover:ring-primary hover:bg-transparent">BASE</button>
+                    <button onclick="setMode('deep_research')" id="mode-deep_research" class="mode-btn font-label-caps text-label-caps text-on-background hover:text-primary hover:border-primary border border-transparent border-r-outline px-4 py-2 transition-colors relative hover:z-10 hover:ring-1 hover:ring-primary hover:bg-transparent">DEEP RESEARCH</button>
+                    <button onclick="setMode('coder')" id="mode-coder" class="mode-btn font-label-caps text-label-caps text-on-background hover:text-primary hover:border-primary border border-transparent px-4 py-2 transition-colors relative hover:z-10 hover:ring-1 hover:ring-primary hover:bg-transparent">CODER</button>
+                </div>
+
+                <div class="flex items-center gap-4">
+                    <div class="w-[140px]"></div> <!-- Spacer -->
+                    <!-- Telemetry Toggle Button -->
+                    <button onclick="toggleTelemetry()" class="text-on-background hover:text-primary font-label-mono text-lg transition-colors border border-transparent hover:border-outline px-2 py-1">
+                        [&gt;_]
+                    </button>
+                </div>
+            </header>
+
+            <!-- Chat Canvas -->
+            <div class="flex-1 overflow-y-auto p-margin-page space-y-stack-md flex flex-col w-full" id="chat-canvas">
+                <div class="max-w-5xl mx-auto w-full space-y-stack-md flex flex-col pb-8">
+                    <!-- Default System Welcome Bubble -->
+                    <div class="border border-primary p-4 max-w-4xl self-start w-full bg-primary bg-opacity-[0.02]">
+                        <div class="font-label-caps text-label-caps text-primary mb-4 uppercase border-b border-outline pb-2 flex items-center gap-2">
+                            <span class="w-2 h-2 bg-primary"></span>
+                            SYSTEM_LOG
+                        </div>
+                        <div class="font-body-lg text-body-lg text-on-background space-y-4 markdown-body">
+                            <p>Добро пожаловать в <strong>Orange OS</strong>. Вычислительное ядро успешно сопряжено с локальной SQLite-памятью.</p>
+                            <ul>
+                                <li>Выберите чат слева или создайте новый.</li>
+                                <li>Агент автоматически помнит контекст текущего диалога.</li>
+                                <li>Используйте экспорт для переноса выжимки в Obsidian.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer Input -->
+            <footer class="p-gutter border-t border-outline bg-background shrink-0 w-full">
+                <div class="max-w-5xl mx-auto flex gap-4 items-end">
+                    <div class="flex-1 relative flex items-end">
+                        <button onclick="openModal('attachment-config-modal')" class="absolute left-3 bottom-3 text-on-background hover:text-primary transition-colors">
+                            <span class="material-symbols-outlined">attach_file</span>
+                        </button>
+                        <textarea id="user-input" class="w-full bg-transparent border border-transparent border-b-outline focus:border-primary focus:ring-1 focus:ring-primary text-on-background font-body-lg resize-none py-3 pl-10 pr-4 placeholder-on-background placeholder-opacity-30 transition-all neon-focus" placeholder="&gt; ENTER DIRECTIVE..." rows="1" style="height:48px;overflow-y:hidden;"></textarea>
+                    </div>
+                    <button id="send-btn" onclick="sendToAgent()" class="bg-transparent border border-primary text-primary hover:bg-primary hover:text-on-primary-container font-label-caps text-label-caps px-6 py-3 uppercase transition-all shrink-0 h-[48px] flex items-center neon-hover">
+                        INITIATE
+                    </button>
+                </div>
+            </footer>
+        </main>
+
+        <!-- Right Sidebar (System Telemetry) -->
+        <aside class="w-[30rem] h-full border-l border-[#262626] bg-[#000000]/95 backdrop-blur-md flex flex-col shrink-0 transition-transform duration-300 transform translate-x-full absolute right-0 z-30 shadow-[0_0_30px_rgba(0,0,0,0.8)]" id="telemetry-sidebar">
+            <div class="h-20 px-4 border-b border-[#262626] flex items-center justify-between shrink-0">
+                <h2 class="font-label-caps text-xs text-primary uppercase tracking-widest">SYSTEM_TELEMETRY</h2>
+                <button onclick="toggleTelemetry()" class="text-on-surface hover:text-primary material-symbols-outlined text-[20px] transition-colors">close</button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 space-y-3 font-mono text-xs">
+                <div class="flex gap-3 telemetry-log-row items-start">
+                    <span class="text-primary/50 font-mono text-[10px] pt-0.5 shrink-0">[14:21:44]</span>
+                    <span class="text-[#00FF66] border border-[#00FF66]/20 bg-[#00FF66]/5 px-1 py-0.2 text-[9px] font-bold tracking-widest shrink-0">CONN</span>
+                    <span class="text-white/95 flex-1 font-mono text-xs break-words">INIT_TCP_CONNECTION: 10.0.2.45...</span>
+                </div>
+                <div class="flex gap-3 telemetry-log-row items-start">
+                    <span class="text-primary/50 font-mono text-[10px] pt-0.5 shrink-0">[14:21:45]</span>
+                    <span class="text-[#00FF66] border border-[#00FF66]/20 bg-[#00FF66]/5 px-1 py-0.2 text-[9px] font-bold tracking-widest shrink-0">OK</span>
+                    <span class="text-white/95 flex-1 font-mono text-xs break-words">ACK_RCVD: Latency 142ms</span>
+                </div>
+                <div class="flex gap-3 telemetry-log-row items-start">
+                    <span class="text-primary/50 font-mono text-[10px] pt-0.5 shrink-0">[14:21:50]</span>
+                    <span class="text-primary border border-primary/20 bg-primary/5 px-1 py-0.2 text-[9px] font-bold tracking-widest shrink-0">EXEC</span>
+                    <span class="text-white/95 flex-1 font-mono text-xs break-words">EXEC_PYTHON: Compiling bytecode...</span>
+                </div>
+                <div class="flex gap-3 telemetry-log-row items-start bg-yellow-950/5 border-l border-yellow-600/30 pl-2">
+                    <span class="text-yellow-500/60 font-mono text-[10px] pt-0.5 shrink-0">[14:22:01]</span>
+                    <span class="text-yellow-500 border border-yellow-500/20 bg-yellow-500/5 px-1 py-0.2 text-[9px] font-bold tracking-widest shrink-0">WARN</span>
+                    <span class="text-yellow-200/95 flex-1 font-mono text-xs break-words">Node 112 timeout vector detected.</span>
+                </div>
+                <div class="flex gap-3 telemetry-log-row items-start">
+                    <span class="text-primary/50 font-mono text-[10px] pt-0.5 shrink-0">[14:22:05]</span>
+                    <span class="text-primary border border-primary/20 bg-primary/5 px-1 py-0.2 text-[9px] font-bold tracking-widest shrink-0">EXEC</span>
+                    <span class="text-white/95 flex-1 font-mono text-xs break-words">EXEC_PYTHON: Analyzing traceback...</span>
+                </div>
+                <div class="flex gap-3 telemetry-log-row items-start">
+                    <span class="text-primary/50 font-mono text-[10px] pt-0.5 shrink-0">[14:22:12]</span>
+                    <span class="text-cyan-400 border border-cyan-400/20 bg-cyan-400/5 px-1 py-0.2 text-[9px] font-bold tracking-widest shrink-0">MEM</span>
+                    <span class="text-white/95 flex-1 font-mono text-xs break-words">MEM_ALLOC: +4.2MB heap</span>
+                </div>
+                <div class="flex gap-3 telemetry-log-row items-start">
+                    <span class="text-primary/50 font-mono text-[10px] pt-0.5 shrink-0">[14:22:15]</span>
+                    <span class="text-primary border border-primary/20 bg-primary/5 px-1 py-0.2 text-[9px] font-bold tracking-widest shrink-0 animate-pulse">WAIT</span>
+                    <span class="text-white/95 flex-1 font-mono text-xs break-words animate-pulse">AWAITING_DIRECTIVE...</span>
+                </div>
+                
+                <!-- Critical Error Block -->
+                <div class="border border-red-950 bg-red-950/10 p-3 mt-4 overflow-hidden max-w-full flex flex-col gap-3">
+                    <!-- Error Metadata Header -->
+                    <div class="flex gap-2 items-center flex-wrap">
+                        <span class="text-red-500 font-bold text-[10px]">[21:04:12]</span>
+                        <span class="bg-red-950/30 text-red-500 border border-red-900/40 px-1.5 py-0.5 text-[9px] font-bold tracking-widest">CRITICAL_FAILURE</span>
+                    </div>
+                    <!-- Error Title / Summary -->
+                    <div class="text-white font-semibold text-xs break-words">
+                        Subprocess execution failed in Coder module.
+                    </div>
+                    <!-- Traceback Console -->
+                    <pre class="text-red-300/90 font-mono text-[11px] p-3 bg-black border border-red-950 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed rounded-none shadow-inner w-full max-w-full block">Traceback (most recent call last):
+  File "/agent/modules/coder.py", line 142, in execute_payload
+    result = subprocess.run(cmd, check=True, capture_output=True)
+  File "/usr/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned non-zero exit status 1.</pre>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MODAL WINDOWS & HIDDEN COMPONENTS TEMPLATES -->
+    <!-- ========================================== -->
+
+    <!-- 1. GLOBAL_SETTINGS Modal -->
+    <div id="global-settings-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
+        <div class="w-full max-w-md border border-outline-variant p-6 bg-surface flex flex-col gap-4 relative">
+            <div class="flex justify-between items-center border-b border-outline-variant pb-2">
+                <h2 class="font-label-caps text-label-caps text-primary">[GLOBAL_SETTINGS]</h2>
+                <button onclick="closeModal('global-settings-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+            </div>
+            <div class="flex gap-4 border-b border-outline-variant pb-2">
+                <span class="text-primary font-label-mono text-label-mono border-b border-primary">API &amp; AUTH</span>
+                <span class="text-on-surface-variant font-label-mono text-label-mono">SYSTEM PATHS</span>
+                <span class="text-on-surface-variant font-label-mono text-label-mono">DEMONS</span>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-[10px] text-on-surface-variant block mb-1">AUTH_TOKEN_HASH</label>
+                    <input class="w-full bg-transparent border-0 border-b border-outline-variant text-body-sm font-label-mono py-1 focus:ring-0" type="password" value="************************"/>
+                </div>
+                <div class="flex justify-between items-center py-2">
+                    <span class="font-label-mono text-label-mono">TELEMETRY_STREAM</span>
+                    <div class="flex border border-outline-variant">
+                        <button class="px-3 py-1 bg-primary text-on-primary text-[10px] font-bold">ON</button>
+                        <button class="px-3 py-1 text-on-surface text-[10px]">OFF</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. MCP_DASHBOARD Modal -->
+    <div id="mcp-dashboard-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
+        <div class="w-full max-w-md border border-outline-variant p-6 bg-surface flex flex-col gap-4 relative">
+            <div class="flex justify-between items-center border-b border-outline-variant pb-2">
+                <h2 class="font-label-caps text-label-caps text-primary">[MCP_DASHBOARD]</h2>
+                <button onclick="closeModal('mcp-dashboard-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+            </div>
+            <div class="grid grid-cols-1 gap-2">
+                <div class="flex items-center justify-between p-3 border border-outline-variant">
+                    <span class="font-label-mono text-label-mono">SQLite_CORE</span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] text-primary">SYNCING</span>
+                        <div class="w-3 h-3 bg-primary"></div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between p-3 border border-outline-variant">
+                    <span class="font-label-mono text-label-mono">Git_REMOTE</span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] text-on-background">CONNECTED</span>
+                        <div class="w-3 h-3 bg-on-background"></div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between p-3 border border-outline-variant opacity-50">
+                    <span class="font-label-mono text-label-mono">FILESYSTEM_ROOT</span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] text-on-surface-variant">OFFLINE</span>
+                        <div class="w-3 h-3 bg-[#262626]"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. EXECUTION_OVERRIDE Modal -->
+    <div id="execution-override-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
+        <div class="w-full max-w-lg border border-primary p-6 bg-surface flex flex-col gap-4 relative">
+            <div class="flex justify-between items-center border-b border-outline-variant pb-2">
+                <div class="flex items-center gap-2 text-primary">
+                    <span class="material-symbols-outlined font-bold">priority_high</span>
+                    <h2 class="font-label-caps text-label-caps">SYSTEM_MODIFICATION_DETECTED</h2>
+                </div>
+                <button onclick="closeModal('execution-override-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+            </div>
+            <div class="bg-[#0A0A0A] border border-outline-variant p-3 font-label-mono text-[10px] overflow-x-auto">
+                <div class="text-error">- rm -rf /kernel/orchestrator.bin</div>
+                <div class="text-[#00FF00]">+ patch /kernel/orchestrator.bin --v-2.0.4</div>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="closeModal('execution-override-modal')" class="flex-1 py-3 border border-on-background text-on-background font-bold text-label-caps hover:bg-on-background hover:text-background transition-all">DENY</button>
+                <button onclick="closeModal('execution-override-modal')" class="flex-1 py-3 bg-primary text-on-primary font-bold text-label-caps hover:bg-primary/80 transition-all">PERMIT</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. SYSTEM_PANIC (OVERLAY) - Opaque black layout-blocker -->
+    <div id="system-panic-modal" class="fixed inset-0 bg-black flex items-center justify-center z-[100] backdrop-blur-sm hidden">
+        <div class="text-center p-12 border-4 border-primary bg-background">
+            <h1 class="text-headline-lg font-headline-lg text-primary mb-4 animate-pulse">FATAL_ERROR: SQLITE_LOCKED</h1>
+            <p class="font-label-mono text-label-mono text-white max-w-md mx-auto">THE DATABASE IS CURRENTLY ENGAGED IN A HIGH-PRIORITY READ/WRITE CYCLE. ALL OVERRIDES ARE TEMPORARILY SUSPENDED.</p>
+            <div class="mt-8">
+                <button class="px-8 py-3 bg-primary text-on-primary font-bold text-label-caps hover:bg-primary/80 transition-all" onclick="closePanic()">BYPASS_LOCK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. ATTACHMENT_CONFIG Modal -->
+    <div id="attachment-config-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
+        <div class="w-full max-w-md border border-outline-variant p-6 bg-surface flex flex-col gap-4 relative">
+            <div class="flex justify-between items-center border-b border-outline-variant pb-2">
+                <div class="flex items-center gap-2 text-primary">
+                    <span class="material-symbols-outlined">description</span>
+                    <h2 class="font-label-caps text-label-caps">HEAVY_PAYLOAD_DETECTED</h2>
+                </div>
+                <button onclick="closeModal('attachment-config-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+            </div>
+            <p class="text-on-surface-variant text-[10px] font-label-mono">SOURCE: kernel_dump_09.pdf (14.2 MB)</p>
+            <div class="space-y-3 mt-2">
+                <label class="flex items-center gap-3 cursor-pointer group">
+                    <div class="w-4 h-4 border border-primary flex items-center justify-center">
+                        <div class="w-2 h-2 bg-primary"></div>
+                    </div>
+                    <span class="font-label-mono text-label-mono group-hover:text-primary">Extract All Pages</span>
+                </label>
+                <label class="flex items-center gap-3 cursor-pointer group">
+                    <div class="w-4 h-4 border border-outline-variant flex items-center justify-center"></div>
+                    <span class="font-label-mono text-label-mono group-hover:text-primary">Specify Range</span>
+                </label>
+            </div>
+            <input class="mt-2 w-full bg-transparent border border-outline-variant p-2 text-[10px] font-label-mono focus:border-primary ring-0 outline-none" placeholder="e.g. 1-10, 15, 20" type="text"/>
+        </div>
+    </div>
+
+    <!-- 6. IN-LINE ELEMENTS & CODE ACTIONS Modal -->
+    <div id="inline-assets-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
+        <div class="w-full max-w-md border border-outline-variant p-6 bg-surface flex flex-col gap-6 relative">
+            <div class="flex justify-between items-center border-b border-outline-variant pb-2">
+                <h2 class="font-label-caps text-label-caps text-primary">[IN_LINE_ASSETS_&amp;_ACTIONS]</h2>
+                <button onclick="closeModal('inline-assets-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+            </div>
+            <div>
+                <h2 class="font-label-caps text-label-caps text-primary border-b border-outline-variant pb-2 mb-4">IN_LINE_ASSETS</h2>
+                <div class="flex flex-wrap gap-2">
+                    <div class="flex items-center gap-2 px-2 py-1 border border-outline-variant font-label-mono text-[10px] hover:border-primary cursor-pointer transition-colors">
+                        [ log_error.txt ] <span class="material-symbols-outlined text-[10px]">close</span>
+                    </div>
+                    <div class="flex items-center gap-2 px-2 py-1 border border-outline-variant font-label-mono text-[10px] hover:border-primary cursor-pointer transition-colors">
+                        [ core_dump_v2.bin ] <span class="material-symbols-outlined text-[10px]">close</span>
+                    </div>
+                    <div class="flex items-center gap-2 px-2 py-1 border border-outline-variant font-label-mono text-[10px] hover:border-primary cursor-pointer transition-colors">
+                        [ system_config.yaml ] <span class="material-symbols-outlined text-[10px]">close</span>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <h2 class="font-label-caps text-label-caps text-primary border-b border-outline-variant pb-2 mb-4">CODE_BLOCK_ACTIONS</h2>
+                <div class="border border-outline-variant overflow-hidden">
+                    <div class="bg-outline-variant/30 px-3 py-1 flex justify-between items-center">
+                        <span class="text-[10px] font-label-mono opacity-60">PYTHON_CORE_V1</span>
+                        <div class="flex gap-2">
+                            <button class="text-[10px] font-bold text-on-background hover:text-primary">[ COPY ]</button>
+                            <button class="text-[10px] font-bold text-primary hover:text-white">[ EXECUTE ]</button>
+                        </div>
+                    </div>
+                    <div class="p-3 font-label-mono text-[10px]">
+                        <span class="text-primary">def</span> <span class="text-on-background">initialize_protocol</span>():<br/>
+                        &nbsp;&nbsp;&nbsp;&nbsp;print(<span class="text-on-surface-variant">"ORANGE_OS_ACTIVE"</span>)
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Script -->
+    <script src="main.js"></script>
+</body>
+</html>

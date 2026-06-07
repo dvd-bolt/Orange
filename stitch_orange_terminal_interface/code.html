@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ORANGE_TERMINAL_PROTOCOL // COMPONENT_LIBRARY</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary": "#c6c6c7",
+                        "on-surface": "#e2e2e2",
+                        "on-tertiary-container": "#2f2f2f",
+                        "surface-container-low": "#1b1b1b",
+                        "primary-fixed": "#ffdbcd",
+                        "on-secondary": "#2f3131",
+                        "tertiary-container": "#989696",
+                        "secondary-container": "#454747",
+                        "on-surface-variant": "#e3bfb1",
+                        "surface-tint": "#ffb596",
+                        "on-tertiary-fixed": "#1b1c1c",
+                        "on-primary-fixed": "#360f00",
+                        "inverse-surface": "#e2e2e2",
+                        "primary": "#ff6600",
+                        "on-error": "#690005",
+                        "on-error-container": "#ffdad6",
+                        "tertiary-fixed-dim": "#c8c6c5",
+                        "secondary-fixed-dim": "#c6c6c7",
+                        "inverse-primary": "#a33e00",
+                        "surface-container-high": "#2a2a2a",
+                        "error": "#ffb4ab",
+                        "primary-container": "#ff6600",
+                        "on-primary-container": "#561d00",
+                        "tertiary-fixed": "#e4e2e1",
+                        "surface-variant": "#353535",
+                        "surface": "#000000",
+                        "outline-variant": "#262626",
+                        "primary-fixed-dim": "#ffb596",
+                        "tertiary": "#c8c6c5",
+                        "surface-bright": "#393939",
+                        "on-tertiary-fixed-variant": "#474746",
+                        "on-secondary-fixed-variant": "#454747",
+                        "inverse-on-surface": "#303030",
+                        "surface-container-lowest": "#0e0e0e",
+                        "surface-container-highest": "#353535",
+                        "secondary-fixed": "#e2e2e2",
+                        "background": "#000000",
+                        "on-tertiary": "#303030",
+                        "error-container": "#93000a",
+                        "on-secondary-container": "#b4b5b5",
+                        "on-background": "#FFFFFF",
+                        "on-primary": "#000000",
+                        "surface-dim": "#131313",
+                        "surface-container": "#1f1f1f",
+                        "on-secondary-fixed": "#1a1c1c",
+                        "on-primary-fixed-variant": "#7c2e00",
+                        "outline": "#262626"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "full": "0px"
+                    },
+                    "spacing": {
+                        "stack-sm": "0.5rem",
+                        "stack-md": "1.5rem",
+                        "gutter": "1rem",
+                        "sidebar-width": "288px",
+                        "margin-page": "2rem"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["JetBrains Mono"],
+                        "label-mono": ["JetBrains Mono"],
+                        "label-caps": ["JetBrains Mono"],
+                        "headline-lg": ["JetBrains Mono"],
+                        "body-lg": ["JetBrains Mono"],
+                        "body-sm": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+                        "label-mono": ["11px", {"lineHeight": "14px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                        "label-caps": ["12px", {"lineHeight": "16px", "letterSpacing": "0.15em", "fontWeight": "800"}],
+                        "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-lg": ["16px", {"lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "400"}],
+                        "body-sm": ["14px", {"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #000000;
+            color: #FFFFFF;
+            font-family: 'JetBrains Mono', monospace;
+            background-image: linear-gradient(rgba(255, 102, 0, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 102, 0, 0.03) 1px, transparent 1px);
+            background-size: 32px 32px;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .scanline {
+            width: 100%;
+            height: 2px;
+            background: rgba(255, 102, 0, 0.1);
+            position: fixed;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 9999;
+            animation: scan 8s linear infinite;
+        }
+        @keyframes scan {
+            0% { top: 0; }
+            100% { top: 100%; }
+        }
+        .pixel-wave {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        .pixel-bar {
+            width: 4px;
+            background: #FF6600;
+            animation: wave 1.2s ease-in-out infinite;
+        }
+        @keyframes wave {
+            0%, 100% { height: 4px; }
+            50% { height: 24px; }
+        }
+        input:focus {
+            outline: none;
+            border-bottom-color: #FF6600 !important;
+        }
+    </style>
+</head>
+<body class="overflow-x-hidden">
+<div class="scanline"></div>
+<!-- SIDEBAR NAV -->
+<aside class="fixed left-0 top-0 h-full w-sidebar-width bg-background border-r border-outline-variant flex flex-col p-4 gap-stack-md z-50">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 bg-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary" style="font-variation-settings: 'FILL' 1;">terminal</span>
+</div>
+<div>
+<h1 class="font-headline-md text-headline-md text-primary tracking-tighter">ORANGE_AGENT</h1>
+<p class="font-label-mono text-label-mono text-primary">STATUS: READY</p>
+</div>
+</div>
+<nav class="flex flex-col gap-2 mt-4">
+<button class="flex items-center gap-3 p-3 bg-primary text-on-primary font-bold font-label-mono text-label-mono transition-all">
+<span class="material-symbols-outlined">stream</span> SESSION_STREAM
+            </button>
+<button class="flex items-center gap-3 p-3 text-on-surface border border-outline-variant font-label-mono text-label-mono hover:border-primary hover:text-primary transition-all">
+<span class="material-symbols-outlined">list_alt</span> SYSTEM_LOGS
+            </button>
+<button class="flex items-center gap-3 p-3 text-on-surface border border-outline-variant font-label-mono text-label-mono hover:border-primary hover:text-primary transition-all">
+<span class="material-symbols-outlined">terminal</span> EXECUTION_OVERRIDES
+            </button>
+<button class="flex items-center gap-3 p-3 text-on-surface border border-outline-variant font-label-mono text-label-mono hover:border-primary hover:text-primary transition-all">
+<span class="material-symbols-outlined">memory</span> MEMORY_INSPECT
+            </button>
+</nav>
+<div class="mt-auto flex flex-col gap-2">
+<div class="p-3 border border-outline-variant">
+<p class="text-[10px] text-primary/60 mb-1">CORE_UPTIME</p>
+<p class="font-label-mono text-label-mono">142:22:09:12</p>
+</div>
+<button class="flex items-center gap-3 p-3 text-on-surface border border-outline-variant font-label-mono text-label-mono hover:border-primary hover:text-primary transition-all">
+<span class="material-symbols-outlined">settings</span> GLOBALS
+            </button>
+</div>
+</aside>
+<!-- MAIN CANVAS -->
+<main class="ml-sidebar-width p-margin-page min-h-screen">
+<!-- HEADER -->
+<header class="flex justify-between items-center w-full px-gutter h-16 border-b border-outline-variant mb-stack-md">
+<div class="font-headline-lg text-headline-lg text-primary tracking-tighter">ORANGE_OS</div>
+<div class="flex gap-4">
+<span class="font-label-mono text-label-mono text-primary px-2 py-1 border border-primary">AUTO</span>
+<span class="font-label-mono text-label-mono text-on-surface-variant px-2 py-1">BASE</span>
+<span class="font-label-mono text-label-mono text-on-surface-variant px-2 py-1">DEEP RESEARCH</span>
+<span class="font-label-mono text-label-mono text-on-surface-variant px-2 py-1">CODER</span>
+</div>
+<div class="flex gap-4 items-center">
+<span class="material-symbols-outlined text-primary">terminal</span>
+<span class="material-symbols-outlined text-primary">settings</span>
+</div>
+</header>
+<!-- COMPONENT GRID -->
+<div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8 relative pb-32">
+<!-- 1. GLOBAL_SETTINGS -->
+<section class="border border-outline-variant p-6 bg-surface flex flex-col gap-4 relative">
+<div class="flex justify-between items-center border-b border-outline-variant pb-2">
+<h2 class="font-label-caps text-label-caps text-primary">[GLOBAL_SETTINGS]</h2>
+<span class="material-symbols-outlined text-on-surface text-sm">close</span>
+</div>
+<div class="flex gap-4 border-b border-outline-variant pb-2">
+<span class="text-primary font-label-mono text-label-mono border-b border-primary">API &amp; AUTH</span>
+<span class="text-on-surface-variant font-label-mono text-label-mono">SYSTEM PATHS</span>
+<span class="text-on-surface-variant font-label-mono text-label-mono">DEMONS</span>
+</div>
+<div class="space-y-4">
+<div>
+<label class="text-[10px] text-on-surface-variant block mb-1">AUTH_TOKEN_HASH</label>
+<input class="w-full bg-transparent border-0 border-b border-outline-variant text-body-sm font-label-mono py-1 focus:ring-0" type="password" value="************************"/>
+</div>
+<div class="flex justify-between items-center py-2">
+<span class="font-label-mono text-label-mono">TELEMETRY_STREAM</span>
+<div class="flex border border-outline-variant">
+<button class="px-3 py-1 bg-primary text-on-primary text-[10px] font-bold">ON</button>
+<button class="px-3 py-1 text-on-surface text-[10px]">OFF</button>
+</div>
+</div>
+</div>
+</section>
+<!-- 2. MCP_DASHBOARD -->
+<section class="border border-outline-variant p-6 bg-surface flex flex-col gap-4">
+<div class="flex justify-between items-center border-b border-outline-variant pb-2">
+<h2 class="font-label-caps text-label-caps text-primary">[MCP_DASHBOARD]</h2>
+</div>
+<div class="grid grid-cols-1 gap-2">
+<div class="flex items-center justify-between p-3 border border-outline-variant">
+<span class="font-label-mono text-label-mono">SQLite_CORE</span>
+<div class="flex items-center gap-2">
+<span class="text-[10px] text-primary">SYNCING</span>
+<div class="w-3 h-3 bg-primary"></div>
+</div>
+</div>
+<div class="flex items-center justify-between p-3 border border-outline-variant">
+<span class="font-label-mono text-label-mono">Git_REMOTE</span>
+<div class="flex items-center gap-2">
+<span class="text-[10px] text-on-background">CONNECTED</span>
+<div class="w-3 h-3 bg-on-background"></div>
+</div>
+</div>
+<div class="flex items-center justify-between p-3 border border-outline-variant opacity-50">
+<span class="font-label-mono text-label-mono">FILESYSTEM_ROOT</span>
+<div class="flex items-center gap-2">
+<span class="text-[10px] text-on-surface-variant">OFFLINE</span>
+<div class="w-3 h-3 bg-[#262626]"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- 3. EXECUTION_OVERRIDE -->
+<section class="border border-primary p-6 bg-surface flex flex-col gap-4">
+<div class="flex items-center gap-2 text-primary">
+<span class="material-symbols-outlined font-bold">priority_high</span>
+<h2 class="font-label-caps text-label-caps">SYSTEM_MODIFICATION_DETECTED</h2>
+</div>
+<div class="bg-[#0A0A0A] border border-outline-variant p-3 font-label-mono text-[10px] overflow-x-auto">
+<div class="text-error">- rm -rf /kernel/orchestrator.bin</div>
+<div class="text-[#00FF00]">+ patch /kernel/orchestrator.bin --v-2.0.4</div>
+</div>
+<div class="flex gap-2">
+<button class="flex-1 py-3 border border-on-background text-on-background font-bold text-label-caps hover:bg-on-background hover:text-background transition-all">DENY</button>
+<button class="flex-1 py-3 bg-primary text-on-primary font-bold text-label-caps hover:bg-primary/80 transition-all">PERMIT</button>
+</div>
+</section>
+<!-- 6. MEMORY_INSPECTOR -->
+<section class="border border-outline-variant p-6 bg-surface flex flex-col gap-4">
+<div class="flex justify-between items-center border-b border-outline-variant pb-2">
+<h2 class="font-label-caps text-label-caps text-primary">CONTEXT_TOKEN_LOAD</h2>
+</div>
+<div class="space-y-2">
+<div class="flex justify-between font-label-mono text-[10px]">
+<span>45,219 / 128,000</span>
+<span class="text-primary">35%</span>
+</div>
+<div class="h-2 w-full bg-outline-variant flex">
+<div class="h-full bg-primary" style="width: 35%"></div>
+</div>
+</div>
+<div class="flex flex-col gap-1 mt-2">
+<div class="flex items-center justify-between text-[10px] p-2 border border-outline-variant">
+<span class="font-label-mono truncate">MSG_ID_8829_SYS_PROMPT</span>
+<button class="material-symbols-outlined text-xs hover:text-primary">close</button>
+</div>
+<div class="flex items-center justify-between text-[10px] p-2 border border-outline-variant">
+<span class="font-label-mono truncate">MSG_ID_8830_USER_DIRECTIVE</span>
+<button class="material-symbols-outlined text-xs hover:text-primary">close</button>
+</div>
+</div>
+</section>
+<!-- 7. ATTACHMENT_CONFIG -->
+<section class="border border-outline-variant p-6 bg-surface flex flex-col gap-4">
+<div class="flex items-center gap-2 text-primary border-b border-outline-variant pb-2">
+<span class="material-symbols-outlined">description</span>
+<h2 class="font-label-caps text-label-caps">HEAVY_PAYLOAD_DETECTED</h2>
+</div>
+<p class="text-on-surface-variant text-[10px] font-label-mono">SOURCE: kernel_dump_09.pdf (14.2 MB)</p>
+<div class="space-y-3 mt-2">
+<label class="flex items-center gap-3 cursor-pointer group">
+<div class="w-4 h-4 border border-primary flex items-center justify-center">
+<div class="w-2 h-2 bg-primary"></div>
+</div>
+<span class="font-label-mono text-label-mono group-hover:text-primary">Extract All Pages</span>
+</label>
+<label class="flex items-center gap-3 cursor-pointer group">
+<div class="w-4 h-4 border border-outline-variant flex items-center justify-center"></div>
+<span class="font-label-mono text-label-mono group-hover:text-primary">Specify Range</span>
+</label>
+</div>
+<input class="mt-2 w-full bg-transparent border border-outline-variant p-2 text-[10px] font-label-mono focus:border-primary ring-0 outline-none" placeholder="e.g. 1-10, 15, 20" type="text"/>
+</section>
+<!-- 8. MESSAGE_CONTEXT_MENU (Simulated) -->
+<section class="border border-outline-variant p-6 bg-surface relative flex flex-col justify-center items-center overflow-hidden">
+<div class="absolute inset-0 bg-[#0A0A0A] opacity-20"></div>
+<div class="z-10 border border-primary bg-background w-48 shadow-[8px_8px_0px_rgba(255,102,0,0.1)]">
+<button class="w-full text-left p-3 font-label-mono text-label-mono hover:bg-primary hover:text-on-primary border-b border-outline-variant flex items-center gap-2">
+<span>&gt;</span> Copy Raw
+                    </button>
+<button class="w-full text-left p-3 font-label-mono text-label-mono hover:bg-primary hover:text-on-primary border-b border-outline-variant flex items-center gap-2">
+<span>&gt;</span> Export to .md
+                    </button>
+<button class="w-full text-left p-3 font-label-mono text-label-mono hover:bg-primary hover:text-on-primary flex items-center gap-2">
+<span>&gt;</span> Branch Session
+                    </button>
+</div>
+<p class="absolute bottom-2 text-[8px] text-on-surface-variant font-label-caps">CONTEXT_MENU_PREVIEW</p>
+</section>
+<!-- 9 & 10. IN-LINE ELEMENTS PREVIEW -->
+<section class="border border-outline-variant p-6 bg-surface flex flex-col gap-6 lg:col-span-2 xl:col-span-1">
+<div>
+<h2 class="font-label-caps text-label-caps text-primary border-b border-outline-variant pb-2 mb-4">IN_LINE_ASSETS</h2>
+<div class="flex flex-wrap gap-2">
+<div class="flex items-center gap-2 px-2 py-1 border border-outline-variant font-label-mono text-[10px] hover:border-primary cursor-pointer transition-colors">
+                            [ log_error.txt ] <span class="material-symbols-outlined text-[10px]">close</span>
+</div>
+<div class="flex items-center gap-2 px-2 py-1 border border-outline-variant font-label-mono text-[10px] hover:border-primary cursor-pointer transition-colors">
+                            [ core_dump_v2.bin ] <span class="material-symbols-outlined text-[10px]">close</span>
+</div>
+<div class="flex items-center gap-2 px-2 py-1 border border-outline-variant font-label-mono text-[10px] hover:border-primary cursor-pointer transition-colors">
+                            [ system_config.yaml ] <span class="material-symbols-outlined text-[10px]">close</span>
+</div>
+</div>
+</div>
+<div>
+<h2 class="font-label-caps text-label-caps text-primary border-b border-outline-variant pb-2 mb-4">CODE_BLOCK_ACTIONS</h2>
+<div class="border border-outline-variant overflow-hidden">
+<div class="bg-outline-variant/30 px-3 py-1 flex justify-between items-center">
+<span class="text-[10px] font-label-mono opacity-60">PYTHON_CORE_V1</span>
+<div class="flex gap-2">
+<button class="text-[10px] font-bold text-on-background hover:text-primary">[ COPY ]</button>
+<button class="text-[10px] font-bold text-primary hover:text-white">[ EXECUTE ]</button>
+</div>
+</div>
+<div class="p-3 font-label-mono text-[10px]">
+<span class="text-primary">def</span> <span class="text-on-background">initialize_protocol</span>():<br/>
+                                print(<span class="text-on-surface-variant">"ORANGE_OS_ACTIVE"</span>)
+                        </div>
+</div>
+</div>
+</section>
+</div>
+<!-- 4. SYSTEM_PANIC (OVERLAY) - Positioned relative to showcase it -->
+<div class="fixed inset-0 bg-background/80 flex items-center justify-center z-[100] backdrop-blur-sm pointer-events-none opacity-20 hover:opacity-100 transition-opacity">
+<div class="text-center p-12 border-4 border-primary bg-background pointer-events-auto">
+<h1 class="text-headline-lg font-headline-lg text-primary mb-4 animate-pulse">FATAL_ERROR: SQLITE_LOCKED</h1>
+<p class="font-label-mono text-label-mono text-white max-w-md mx-auto">THE DATABASE IS CURRENTLY ENGAGED IN A HIGH-PRIORITY READ/WRITE CYCLE. ALL OVERRIDES ARE TEMPORARILY SUSPENDED.</p>
+<div class="mt-8">
+<button class="px-8 py-3 bg-primary text-on-primary font-bold text-label-caps" onclick="this.closest('.fixed').remove()">BYPASS_LOCK</button>
+</div>
+</div>
+</div>
+<!-- 5. AUDIO_SENSOR_ACTIVE (FLOATING BAR) -->
+<div class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-background border border-primary px-6 py-3 flex items-center gap-6 z-[60] shadow-[0px_0px_20px_rgba(255,102,0,0.2)]">
+<div class="flex items-center gap-3">
+<div class="w-2 h-2 bg-primary animate-ping"></div>
+<span class="font-label-caps text-label-caps text-primary tracking-widest">LISTENING_PHASE_ACTIVE</span>
+</div>
+<div class="pixel-wave h-6">
+<div class="pixel-bar" style="animation-delay: 0.1s"></div>
+<div class="pixel-bar" style="animation-delay: 0.3s"></div>
+<div class="pixel-bar" style="animation-delay: 0.2s"></div>
+<div class="pixel-bar" style="animation-delay: 0.5s"></div>
+<div class="pixel-bar" style="animation-delay: 0.4s"></div>
+<div class="pixel-bar" style="animation-delay: 0.2s"></div>
+<div class="pixel-bar" style="animation-delay: 0.1s"></div>
+<div class="pixel-bar" style="animation-delay: 0.6s"></div>
+</div>
+<button class="material-symbols-outlined text-primary hover:text-white">mic_off</button>
+</div>
+<!-- BACKGROUND IMAGE DECORATION -->
+<div class="fixed top-20 right-20 w-96 h-96 opacity-10 pointer-events-none">
+<img alt="Cyberpunk high-tech hardware detail" class="grayscale" data-alt="A macro photograph of an intricate, futuristic motherboard and hardware circuitry, illuminated with glowing orange trace lines against a pitch-black background. The visual style is clinical, sharp, and high-contrast, perfectly aligning with a dry cyberpunk aesthetic. Every detail of the microchips and capacitors is crisp and mechanical, evoking a sense of high-velocity digital orchestration and system-level utility. The lighting is low-key with intense orange accents." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDMjwIjGFx0iUREn6Sc-YB_PIvpyLXuCHyStIrkHAL8zI-djkHP1_94FWTBwHjJ474j-84X-sVCZnTHWSnbrWBZXpjOKLxJOnvkpQvv_TBziB1oWQn64SP8J65459yYJfQ7C3BKwz8iZNS8TVKJVgzk4MFarnAFwKmoxpec_zVEEh9kki7SbnFcqJ5iz4HKoW8Q6LChC4eJANnuC1aenyJeVQAr4bqxanh7ShrtFCvWpf76ZYtoSjZsyk-jWDjT2wnLkJ_3P1i26hln"/>
+</div>
+</main>
+<script>
+        // Micro-interaction for active nav states
+        const buttons = document.querySelectorAll('nav button');
+        buttons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                buttons.forEach(b => {
+                    b.classList.remove('bg-primary', 'text-on-primary', 'font-bold');
+                    b.classList.add('text-on-surface', 'border', 'border-outline-variant');
+                });
+                btn.classList.add('bg-primary', 'text-on-primary', 'font-bold');
+                btn.classList.remove('text-on-surface', 'border', 'border-outline-variant');
+            });
+        });
+
+        // Atmospheric terminal flicker effect
+        setInterval(() => {
+            if(Math.random() > 0.98) {
+                document.body.style.opacity = '0.9';
+                setTimeout(() => document.body.style.opacity = '1', 50);
+            }
+        }, 100);
+    </script>
+</body></html>

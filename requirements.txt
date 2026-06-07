@@ -1,0 +1,5 @@
+pydantic-ai[gemini]
+pydantic
+pydantic-settings
+mcp
+python-dotenv
