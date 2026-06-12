@@ -509,5 +509,174 @@ async def list_existing_notes(ctx: RunContext) -> str:
     except Exception as e:
         return f"Ошибка при получении списка заметок: {str(e)}"
 
+# --- ИНСТРУМЕНТЫ OSINT И АВТО-РАСКРЫТИЯ ССЫЛОК ---
+
+async def scout_website(ctx: RunContext[OrangeDeps], url: str) -> str:
+    """
+    Выполняет быстрый аудит безопасности и технологий веб-сайта (OSINT).
+    Проверяет CMS, заголовки сервера, HTTPS и наличие уязвимостей.
+    """
+    import httpx
+    from bs4 import BeautifulSoup
+    import urllib.parse
+    import re
+
+    # Normalize URL
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = "https://" + url
+
+    report = [f"# Отчет об аудите домена: {url}\n"]
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            response = await client.get(url)
+            headers = response.headers
+            html = response.text
+            status = response.status_code
+
+        soup = BeautifulSoup(html, 'html.parser')
+
+        # 1. Tech stack checks
+        techs = []
+        meta_generator = soup.find('meta', attrs={'name': 'generator'})
+        if meta_generator:
+            techs.append(f"CMS (Generator): {meta_generator.get('content')}")
+        
+        html_str = html.lower()
+        if "wp-content" in html_str:
+            techs.append("CMS: WordPress")
+        if "bitrix" in html_str:
+            techs.append("CMS: 1C-Bitrix")
+        if "tilda" in html_str:
+            techs.append("CMS: Tilda")
+        if "webflow" in html_str:
+            techs.append("CMS: Webflow")
+        if "joomla" in html_str:
+            techs.append("CMS: Joomla")
+        if "drupal" in html_str:
+            techs.append("CMS: Drupal")
+        if "next/js" in html_str or "_next/static" in html_str:
+            techs.append("Framework: Next.js")
+        if "react" in html_str:
+            techs.append("Framework: React")
+        if "vue" in html_str:
+            techs.append("Framework: Vue.js")
+
+        server = headers.get("Server", "Не указан")
+        powered_by = headers.get("X-Powered-By", "Не указан")
+
+        report.append("## 🛠️ Технологический стек")
+        report.append(f"- **Сервер**: `{server}`")
+        report.append(f"- **Powered By**: `{powered_by}`")
+        if techs:
+            report.append("- **Обнаруженные технологии**:")
+            for t in techs:
+                report.append(f"  - {t}")
+        else:
+            report.append("- **Обнаруженные технологии**: Не определено (кастомный стек)")
+
+        # 2. Security checks
+        sec = []
+        is_https = url.startswith("https://")
+        if not is_https:
+            sec.append("❌ Сайт работает по незащищенному протоколу HTTP.")
+        else:
+            sec.append("✅ Сайт работает по защищенному протоколу HTTPS.")
+
+        hsts = headers.get("Strict-Transport-Security")
+        if hsts:
+            sec.append("✅ Заголовок HSTS (Strict-Transport-Security) настроен.")
+        else:
+            sec.append("⚠️ Отсутствует заголовок HSTS.")
+
+        csp = headers.get("Content-Security-Policy")
+        if csp:
+            sec.append("✅ Заголовок CSP (Content-Security-Policy) настроен.")
+        else:
+            sec.append("⚠️ Отсутствует заголовок CSP (защита от XSS).")
+
+        xfo = headers.get("X-Frame-Options")
+        if xfo:
+            sec.append("✅ Заголовок X-Frame-Options настроен (защита от кликджекинга).")
+        else:
+            sec.append("⚠️ Отсутствует заголовок X-Frame-Options.")
+
+        report.append("\n## 🔒 Безопасность")
+        for s in sec:
+            report.append(s)
+
+        # 3. Quick audit of common leaks
+        parsed = urllib.parse.urlparse(url)
+        git_url = f"{parsed.scheme}://{parsed.netloc}/.git/config"
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as check_client:
+                git_res = await check_client.get(git_url)
+                if git_res.status_code == 200 and "[core]" in git_res.text:
+                    report.append("\n🚨 **КРИТИЧЕСКАЯ УЯЗВИМОСТЬ: Обнаружена открытая папка .git!**")
+                    report.append(f"Доступна по адресу: {git_url}")
+        except Exception:
+            pass
+
+        return "\n".join(report)
+
+    except Exception as e:
+        return f"Ошибка при сканировании сайта {url}: {str(e)}"
+
+async def expand_note_links(ctx: RunContext[OrangeDeps], file_path: str) -> str:
+    """
+    Находит все внешние ссылки (HTTP/HTTPS) в заметке, скачивает их содержимое,
+    делает краткую выжимку и дописывает в конец заметки как приложение.
+    """
+    import re
+    valid_path = validate_path(ctx.deps.obsidian_vault_path, file_path)
+    if not os.path.exists(valid_path):
+        return f"Ошибка: файл {file_path} не найден."
+
+    with open(valid_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # Find raw markdown HTTP/HTTPS links
+    urls = re.findall(r'https?://[^\s\)\>\]]+', content)
+    if not urls:
+        return "Внешних ссылок для раскрытия в заметке не найдено."
+
+    # De-duplicate
+    urls = list(set(urls))
+    
+    import httpx
+    from bs4 import BeautifulSoup
+    from core.folding import summarize_text
+    
+    appendix = ["\n\n## 🔗 Приложения и веб-источники (Авто-раскрытие)\n"]
+    api_key = ctx.deps.settings.gemini_api_key
+    if not api_key:
+        return "Ошибка: Для саммаризации ссылок необходим GEMINI_API_KEY."
+
+    for url in urls:
+        if "127.0.0.1" in url or "localhost" in url:
+            continue
+        try:
+            print(f"[Link Expansion] Scraping URL: {url}")
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                res = await client.get(url)
+                if res.status_code != 200:
+                    continue
+                soup = BeautifulSoup(res.text, 'html.parser')
+                text = soup.get_text()
+                text = re.sub(r'\s+', ' ', text).strip()[:4000]
+                
+                summary = await summarize_text(f"Сайт: {url}\n\nТекст:\n{text}", api_key)
+                title = soup.title.string if soup.title else url
+                appendix.append(f"### {title.strip()}\n- **Ссылка**: {url}\n- **Выжимка**:\n{summary}\n")
+        except Exception as e:
+            print(f"[Link Expansion Warning] Failed to expand {url}: {e}")
+            
+    if len(appendix) > 1:
+        new_content = content + "\n" + "\n".join(appendix)
+        from core.file_ops import atomic_write_obsidian_note
+        await atomic_write_obsidian_note(valid_path, new_content)
+        return f"Успешно раскрыто {len(appendix) - 1} ссылок(и) и добавлено в конец заметки."
+        
+    return "Не удалось раскрыть ссылки в заметке."
+
 
 

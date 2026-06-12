@@ -44,6 +44,13 @@ def init_db():
                     FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
                 )
             ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS note_embeddings (
+                    file_path TEXT PRIMARY KEY,
+                    embedding TEXT,
+                    last_modified REAL
+                )
+            ''')
             conn.commit()
 
 # --- CRUD для чатов ---
@@ -163,4 +170,31 @@ def save_cached_embedding(message_id: int, embedding_json: str):
                 "INSERT OR REPLACE INTO message_embeddings (message_id, embedding) VALUES (?, ?)",
                 (message_id, embedding_json)
             )
+            conn.commit()
+
+def get_note_embedding(file_path: str) -> Optional[Dict[str, Any]]:
+    """Возвращает кэшированный эмбеддинг заметки и время её модификации"""
+    with get_connection() as conn:
+        cursor = conn.execute("SELECT embedding, last_modified FROM note_embeddings WHERE file_path = ?", (file_path,))
+        row = cursor.fetchone()
+        if row:
+            import json
+            return {"embedding": json.loads(row["embedding"]), "last_modified": row["last_modified"]}
+        return None
+
+def save_note_embedding(file_path: str, embedding_json: str, last_modified: float):
+    """Сохраняет эмбеддинг заметки и её время модификации"""
+    with _lock:
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO note_embeddings (file_path, embedding, last_modified) VALUES (?, ?, ?)",
+                (file_path, embedding_json, last_modified)
+            )
+            conn.commit()
+
+def delete_note_embedding(file_path: str):
+    """Удаляет эмбеддинг заметки из кэша"""
+    with _lock:
+        with get_connection() as conn:
+            conn.execute("DELETE FROM note_embeddings WHERE file_path = ?", (file_path,))
             conn.commit()

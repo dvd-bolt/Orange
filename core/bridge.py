@@ -170,6 +170,44 @@ class BridgeAPI:
         except Exception as ex:
             return json.dumps({"status": "error", "message": str(ex)})
 
+    # --- Аудио транскрибация ---
+
+    def api_transcribe_audio(self, base64_audio: str) -> str:
+        """Синхронный вызов из JS для транскрибации голосовых директив"""
+        future = asyncio.run_coroutine_threadsafe(
+            self._async_transcribe_audio(base64_audio),
+            self._background_loop
+        )
+        try:
+            return future.result()
+        except Exception as e:
+            print(f"[Bridge Error] Audio transcription failed: {e}")
+            return f"[Error: {str(e)}]"
+
+    async def _async_transcribe_audio(self, base64_audio: str) -> str:
+        import base64
+        from pydantic_ai import Agent
+        from pydantic_ai.messages import BinaryContent
+        from core.agent import LITE_MODEL
+        
+        try:
+            audio_bytes = base64.b64decode(base64_audio)
+            binary_part = BinaryContent(data=audio_bytes, media_type="audio/webm")
+            
+            # Use a clean agent for transcription to avoid polluting/triggering system prompts or tools
+            transcriber = Agent(LITE_MODEL)
+            res = await transcriber.run([
+                "Пожалуйста, транскрибируй эту аудиозапись в текст. Твоя задача — вернуть ТОЛЬКО текст транскрипции на русском языке, без объяснений, комментариев и форматирования. Если в аудио тишина или нет речи, просто ничего не возвращай.",
+                binary_part
+            ])
+            
+            transcript = res.output.strip() if hasattr(res, 'output') else ""
+            print(f"[Bridge] Audio transcription completed: '{transcript}'")
+            return transcript
+        except Exception as e:
+            print(f"[Bridge Error] Transcription async failed: {e}")
+            return f"[Error transcribing audio: {str(e)}]"
+
     # --- Основной процесс вызова агента ---
 
     def run_agent(self, profile_name: str, user_prompt: str, attachment_paths_json: str = "[]") -> str:
@@ -211,22 +249,43 @@ class BridgeAPI:
         # Load history
         history = db.get_chat_history(self.current_chat_id)
         
-        # Format history context
+        # Format history context (with Wiki-Fold compression)
         history_context = ""
-        if len(history) > 1:
-            context_lines = []
-            for msg in history[:-1]:
-                role_name = "USER" if msg['role'] == "user" else "AGENT"
-                context_lines.append(f"{role_name}: {msg['content']}")
-            history_context = "PAST CONVERSATION CONTEXT IN THIS CHAT:\n" + "\n".join(context_lines) + "\n\n"
+        try:
+            from core.folding import fold_history
+            api_key = self._deps.settings.gemini_api_key
+            if api_key and len(history) > 1:
+                # We fold the history excluding the last message (which is the current user prompt just inserted)
+                history_to_fold = history[:-1]
+                folded = await fold_history(history_to_fold, api_key)
+                context_lines = []
+                for msg in folded:
+                    role_name = "USER" if msg['role'] == "user" else "AGENT"
+                    context_lines.append(f"{role_name}: {msg['content']}")
+                history_context = "PAST CONVERSATION CONTEXT IN THIS CHAT:\n" + "\n".join(context_lines) + "\n\n"
+            elif len(history) > 1:
+                context_lines = []
+                for msg in history[:-1]:
+                    role_name = "USER" if msg['role'] == "user" else "AGENT"
+                    context_lines.append(f"{role_name}: {msg['content']}")
+                history_context = "PAST CONVERSATION CONTEXT IN THIS CHAT:\n" + "\n".join(context_lines) + "\n\n"
+        except Exception as e:
+            print(f"[Bridge Wiki-Fold Error] Fallback to raw formatting: {e}")
+            if len(history) > 1:
+                context_lines = []
+                for msg in history[:-1]:
+                    role_name = "USER" if msg['role'] == "user" else "AGENT"
+                    context_lines.append(f"{role_name}: {msg['content']}")
+                history_context = "PAST CONVERSATION CONTEXT IN THIS CHAT:\n" + "\n".join(context_lines) + "\n\n"
             
-        # Fast search index for relevant Markdown files in Vault
+        # Fast search index for relevant Markdown files in Vault (Hybrid Search RAG)
         relevant_files_context = ""
         if not parsed_cmd:
             try:
-                from core.markdown_ops import search_relevant_files
+                from core.hybrid_search import hybrid_search
                 vault_path = self._deps.obsidian_vault_path
-                relevant_files = search_relevant_files(vault_path, user_prompt, limit=3)
+                api_key = self._deps.settings.gemini_api_key
+                relevant_files = await hybrid_search(user_prompt, vault_path, api_key=api_key, limit=3)
                 if relevant_files:
                     context_chunks = []
                     for filepath in relevant_files:
@@ -241,7 +300,7 @@ class BridgeAPI:
                     if context_chunks:
                         relevant_files_context = "RELEVANT OBSIDIAN NOTES FROM YOUR VAULT:\n" + "\n\n".join(context_chunks) + "\n\n"
             except Exception as e:
-                print(f"[Bridge Indexer Error] Failed search: {e}")
+                print(f"[Bridge Indexer Error] Failed hybrid search: {e}")
             
         final_prompt = history_context + relevant_files_context + f"NEW USER REQUEST:\n{user_prompt}"
         
@@ -309,20 +368,20 @@ class BridgeAPI:
                 except Exception as ex:
                     print(f"[Bridge Error] Failed to read staged file '{path}': {ex}")
 
-        # Assemble prompt payload
-        run_payload = [final_prompt]
-        for part in parts:
-            run_payload.append(part)
-
-        # Run agent
-        result = await agent.run(
-            run_payload,
-            model=current_model,
-            deps=self._deps,
-            model_settings={"system_prompt": sys_prompt}
+        # Execute the FSM Graph (pydantic-graph)
+        from core.graph import orange_fsm_graph, OrangeGraphState
+        
+        state = OrangeGraphState(
+            user_prompt=user_prompt,
+            profile_name=profile_name,
+            dynamic_instruction=dynamic_instruction,
+            chat_history_context=history_context,
+            relevant_files_context=relevant_files_context,
+            attachments=parts
         )
         
-        response_text = getattr(result, 'data', getattr(result, 'output', str(result)))
+        run_res = await orange_fsm_graph.run(state=state, deps=self._deps)
+        response_text = run_res.data if hasattr(run_res, 'data') else str(run_res)
         
         # Запись ответа агента
         db.add_message(self.current_chat_id, "model", response_text)

@@ -940,3 +940,206 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     initUI();
 });
+
+// --- KNOWLEDGE GRAPH VISUALIZATION & VOICE TRANSCRIPTION ---
+
+let isGraphVisible = false;
+async function toggleKnowledgeGraph() {
+    const overlay = document.getElementById('knowledge-graph-overlay');
+    if (!overlay) return;
+    
+    isGraphVisible = !isGraphVisible;
+    if (isGraphVisible) {
+        overlay.classList.remove('hidden');
+        await loadAndRenderGraph();
+    } else {
+        overlay.classList.add('hidden');
+    }
+}
+window.toggleKnowledgeGraph = toggleKnowledgeGraph;
+
+async function loadAndRenderGraph() {
+    const container = document.getElementById('graph-svg-container');
+    if (!container) return;
+    container.innerHTML = '<div class="absolute inset-0 flex items-center justify-center text-primary font-label-mono">LOADING_GRAPH_DATA...</div>';
+    
+    try {
+        const response = await fetch('http://127.0.0.1:8080/api/graph');
+        const data = await response.json();
+        
+        container.innerHTML = '';
+        renderGraph(data, container);
+    } catch(e) {
+        container.innerHTML = `<div class="absolute inset-0 flex items-center justify-center text-error font-label-mono">ERROR_LOADING_GRAPH: ${e.toString()}</div>`;
+    }
+}
+
+function renderGraph(data, container) {
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    
+    const svg = d3.create("svg")
+        .attr("width", "100%")
+        .attr("height", "100%")
+        .attr("viewBox", [0, 0, width, height])
+        .attr("style", "max-width: 100%; height: auto;");
+        
+    const g = svg.append("g");
+    svg.call(d3.zoom().on("zoom", (event) => {
+        g.attr("transform", event.transform);
+    }));
+    
+    const simulation = d3.forceSimulation(data.nodes)
+        .force("link", d3.forceLink(data.links).id(d => d.id).distance(80))
+        .force("charge", d3.forceManyBody().strength(-120))
+        .force("center", d3.forceCenter(width / 2, height / 2));
+        
+    const link = g.append("g")
+        .attr("stroke", "#262626")
+        .attr("stroke-opacity", 0.6)
+        .selectAll("line")
+        .data(data.links)
+        .join("line")
+        .attr("stroke-width", 1.5);
+        
+    const colorScale = d3.scaleOrdinal()
+        .domain([1, 2, 3])
+        .range(["#E65100", "#00C853", "#00B0FF"]);
+        
+    const node = g.append("g")
+        .attr("stroke", "#121212")
+        .attr("stroke-width", 1.5)
+        .selectAll("circle")
+        .data(data.nodes)
+        .join("circle")
+        .attr("r", d => d.group === 2 ? 8 : (d.group === 3 ? 6 : 5))
+        .attr("fill", d => colorScale(d.group))
+        .call(d3.drag()
+            .on("start", dragstarted)
+            .on("drag", dragged)
+            .on("end", dragended));
+            
+    const label = g.append("g")
+        .selectAll("text")
+        .data(data.nodes)
+        .join("text")
+        .attr("dx", 10)
+        .attr("dy", ".35em")
+        .attr("font-family", "JetBrains Mono, monospace")
+        .attr("font-size", "8px")
+        .attr("fill", "#A3A3A3")
+        .text(d => d.id);
+        
+    node.append("title").text(d => d.id);
+        
+    simulation.on("tick", () => {
+        link
+            .attr("x1", d => d.source.x)
+            .attr("y1", d => d.source.y)
+            .attr("x2", d => d.target.x)
+            .attr("y2", d => d.target.y);
+
+        node
+            .attr("cx", d => d.x)
+            .attr("cy", d => d.y);
+            
+        label
+            .attr("x", d => d.x)
+            .attr("y", d => d.y);
+    });
+    
+    function dragstarted(event, d) {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+    }
+    
+    function dragged(event, d) {
+        d.fx = event.x;
+        d.fy = event.y;
+    }
+    
+    function dragended(event, d) {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+    }
+    
+    container.appendChild(svg.node());
+}
+
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+
+async function toggleVoiceRecording() {
+    const micIcon = document.getElementById('voice-record-icon');
+    const micBtn = document.getElementById('voice-record-btn');
+    if (!micIcon || !micBtn) return;
+    
+    if (!isRecording) {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioChunks = [];
+            
+            let options = { mimeType: 'audio/webm' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options = { mimeType: 'audio/ogg' };
+            }
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options = {};
+            }
+            
+            mediaRecorder = new MediaRecorder(stream, options);
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                }
+            };
+            
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                stream.getTracks().forEach(track => track.stop());
+                
+                const reader = new FileReader();
+                reader.readAsDataURL(audioBlob);
+                reader.onloadend = async () => {
+                    const base64Data = reader.result.split(',')[1];
+                    micBtn.title = "TRANSCRIBING...";
+                    micIcon.innerText = "pending";
+                    try {
+                        const text = await window.pywebview.api.api_transcribe_audio(base64Data);
+                        const inputEl = document.getElementById('user-input');
+                        if (inputEl && text) {
+                            inputEl.value = (inputEl.value ? inputEl.value + " " : "") + text;
+                            inputEl.style.height = 'auto';
+                            inputEl.style.height = inputEl.scrollHeight + 'px';
+                        }
+                    } catch(e) {
+                        console.error("Transcription error:", e);
+                    } finally {
+                        micBtn.title = "Record Voice Directive";
+                        micIcon.innerText = "mic";
+                    }
+                };
+            };
+            
+            mediaRecorder.start();
+            isRecording = true;
+            micIcon.innerText = "stop";
+            micIcon.classList.add("text-error");
+            micBtn.title = "Stop Recording";
+        } catch(e) {
+            console.error("Mic access denied:", e);
+            alert("Не удалось получить доступ к микрофону: " + e.toString());
+        }
+    } else {
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+            mediaRecorder.stop();
+        }
+        isRecording = false;
+        micIcon.classList.remove("text-error");
+    }
+}
+window.toggleVoiceRecording = toggleVoiceRecording;
+

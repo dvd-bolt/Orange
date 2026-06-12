@@ -126,6 +126,8 @@ agent.tool(tools.fetch_url)
 agent.tool(tools.deep_research)
 agent.tool(tools.execute_python)
 agent.tool(tools.list_existing_notes)
+agent.tool(tools.scout_website)
+agent.tool(tools.expand_note_links)
 
 @agent.system_prompt
 def system_prompt_vault_path(ctx: RunContext[OrangeDeps]) -> str:

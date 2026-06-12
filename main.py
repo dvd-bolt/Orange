@@ -31,6 +31,27 @@ async def safe_connect_mcp(client: ObsidianMCPClient):
         print(f"[MCP Client Error] Не удалось подключиться: {e}")
 
 class ObsidianQueryHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/api/graph':
+            try:
+                from core.graph_api import get_notes_graph
+                vault_path = self.server.deps.obsidian_vault_path
+                graph_data = get_notes_graph(vault_path)
+                
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps(graph_data).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(f"Error: {str(e)}".encode('utf-8'))
+        else:
+            self.send_response(404)
+            self.end_headers()
+
     def do_POST(self):
         if self.path == '/query':
             try:
@@ -102,6 +123,11 @@ def main():
     
     # Инициализация Watchdog для папки Obsidian
     vault_root = os.path.abspath(settings.obsidian_vault_path)
+    
+    # Инициализация поискового индекса BM25
+    from core.bm25 import global_bm25_indexer
+    global_bm25_indexer.index_vault(vault_root)
+    
     deps = OrangeDeps(settings=settings, mcp_client=mcp_client, obsidian_vault_path=vault_root)
     api = BridgeAPI(background_loop, deps)
     

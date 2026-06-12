@@ -13,6 +13,9 @@
 
     <!-- Markdown Parser Library -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- D3.js for Knowledge Graph -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
     
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
@@ -106,6 +109,11 @@
                 </div>
 
                 <div class="flex items-center gap-3">
+                    <!-- Knowledge Graph Button -->
+                    <button onclick="toggleKnowledgeGraph()" id="btn-knowledge-graph" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-3 py-1.5 hover:border-primary">
+                        <span class="material-symbols-outlined text-[16px]">schema</span>
+                        <span>GRAPH</span>
+                    </button>
                     <!-- MCP Status Button -->
                     <button onclick="openMCPDashboard()" id="btn-mcp-status" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-3 py-1.5 hover:border-primary">
                         <span class="material-symbols-outlined text-[16px]">hub</span>
@@ -139,6 +147,20 @@
                 </div>
             </div>
 
+            <!-- Knowledge Graph Overlay -->
+            <div id="knowledge-graph-overlay" class="hidden absolute inset-x-margin-page bottom-margin-page top-24 z-40 bg-[#000000]/95 backdrop-blur-md flex flex-col p-6 border border-outline shadow-2xl">
+                <div class="flex justify-between items-center mb-4 border-b border-outline pb-2">
+                    <h2 class="font-label-caps text-xs text-primary uppercase tracking-widest flex items-center gap-2">
+                        <span class="w-2 h-2 bg-primary"></span>
+                        KNOWLEDGE_GRAPH_VISUALIZATION
+                    </h2>
+                    <button onclick="toggleKnowledgeGraph()" class="text-on-surface hover:text-primary material-symbols-outlined text-[20px] transition-colors">close</button>
+                </div>
+                <div class="flex-1 w-full bg-black/40 border border-outline relative overflow-hidden" id="graph-svg-container">
+                    <!-- SVG will be appended here by D3.js -->
+                </div>
+            </div>
+
             <!-- Footer Input -->
             <footer class="p-gutter border-t border-outline bg-background shrink-0 w-full">
                 <div class="max-w-5xl mx-auto flex flex-col gap-2">
@@ -148,9 +170,12 @@
                     <div class="w-full flex gap-4 items-end">
                         <div class="flex-1 relative flex items-end">
                             <button onclick="uploadFile()" class="absolute left-3 bottom-3 text-on-background hover:text-primary transition-colors" title="Stage document (.txt, .md, .csv, .pdf)">
-                                <span class="material-symbols-outlined">attach_file</span>
+                                <span class="material-symbols-outlined flex items-center justify-center">attach_file</span>
                             </button>
-                            <textarea id="user-input" class="w-full bg-transparent border border-transparent border-b-outline focus:border-primary focus:ring-1 focus:ring-primary text-on-background font-body-lg resize-none py-3 pl-10 pr-4 placeholder-on-background placeholder-opacity-30 transition-all neon-focus" placeholder="&gt; ENTER DIRECTIVE..." data-i18n-placeholder="placeholder_directive" rows="1" style="height:48px;overflow-y:hidden;"></textarea>
+                            <button id="voice-record-btn" onclick="toggleVoiceRecording()" class="absolute left-10 bottom-3 text-on-background hover:text-primary transition-colors" title="Record Voice Directive">
+                                <span class="material-symbols-outlined flex items-center justify-center" id="voice-record-icon">mic</span>
+                            </button>
+                            <textarea id="user-input" class="w-full bg-transparent border border-transparent border-b-outline focus:border-primary focus:ring-1 focus:ring-primary text-on-background font-body-lg resize-none py-3 pl-16 pr-4 placeholder-on-background placeholder-opacity-30 transition-all neon-focus" placeholder="&gt; ENTER DIRECTIVE..." data-i18n-placeholder="placeholder_directive" rows="1" style="height:48px;overflow-y:hidden;"></textarea>
                         </div>
                         <button id="send-btn" onclick="sendToAgent()" class="bg-transparent border border-primary text-primary hover:bg-primary hover:text-on-primary-container font-label-caps text-label-caps px-6 py-3 uppercase transition-all shrink-0 h-[48px] flex items-center neon-hover">
                             <span data-i18n="btn_initiate">INITIATE</span>
