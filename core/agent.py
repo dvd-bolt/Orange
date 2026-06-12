@@ -11,7 +11,7 @@ from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 LITE_MODEL = 'google:gemini-3.1-flash-lite'
-HEAVY_MODEL = 'google:gemini-3.1-flash'
+HEAVY_MODEL = 'google:gemini-3.1-flash-lite'
 
 _heavy_limiter_lock = asyncio.Lock()
 _lite_limiter_lock = asyncio.Lock()
@@ -78,7 +78,7 @@ class OrangeAgent(Agent):
             if isinstance(target_model, str):
                 if target_model == 'gemini-3.1-flash-lite':
                     target_model = LITE_MODEL
-                elif target_model == 'gemini-3.5-flash':
+                elif target_model in ('gemini-3.1-pro-preview', 'gemini-3.5-flash'):
                     target_model = HEAVY_MODEL
             
             # Local Rate Limiter checks before calling Google API
