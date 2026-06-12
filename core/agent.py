@@ -5,11 +5,18 @@ from core import tools
 
 import os
 import subprocess
+import time
+import asyncio
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 LITE_MODEL = 'google:gemini-3.1-flash-lite'
 HEAVY_MODEL = 'google:gemini-3.1-flash'
+
+_heavy_limiter_lock = asyncio.Lock()
+_lite_limiter_lock = asyncio.Lock()
+_last_heavy_time = 0.0
+_last_lite_time = 0.0
 
 def get_openrouter_model(model_name: str) -> OpenAIModel:
     api_key = os.environ.get("OPENROUTER_API_KEY")
@@ -73,6 +80,28 @@ class OrangeAgent(Agent):
                     target_model = LITE_MODEL
                 elif target_model == 'gemini-3.5-flash':
                     target_model = HEAVY_MODEL
+            
+            # Local Rate Limiter checks before calling Google API
+            resolved_model = target_model or self.model
+            if resolved_model == HEAVY_MODEL:
+                async with _heavy_limiter_lock:
+                    global _last_heavy_time
+                    now = time.time()
+                    elapsed = now - _last_heavy_time
+                    if elapsed < 12.0:
+                        sleep_time = 12.0 - elapsed
+                        print(f"[COOLING_DOWN] Оптимизация частоты для Heavy-модели. Пауза {sleep_time:.2f}с...")
+                        await asyncio.sleep(sleep_time)
+                    _last_heavy_time = time.time()
+            elif resolved_model == LITE_MODEL:
+                async with _lite_limiter_lock:
+                    global _last_lite_time
+                    now = time.time()
+                    elapsed = now - _last_lite_time
+                    if elapsed < 4.0:
+                        sleep_time = 4.0 - elapsed
+                        await asyncio.sleep(sleep_time)
+                    _last_lite_time = time.time()
             
             return await super().run(
                 user_prompt,
