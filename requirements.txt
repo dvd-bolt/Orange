@@ -1,5 +1,43 @@
+# Core AI Framework
 pydantic-ai[gemini]
 pydantic
 pydantic-settings
+
+# MCP (Model Context Protocol)
 mcp
+
+# Environment
 python-dotenv
+
+# GUI
+pywebview
+
+# File system watching (Obsidian integration)
+watchdog
+
+# Async file I/O
+aiofiles
+
+# Retry logic for atomic writes
+tenacity
+
+# Markdown AST parsing
+mistletoe
+
+# PDF text extraction
+pypdf
+
+# HTTP client (async)
+httpx
+
+# HTML parsing (OSINT)
+beautifulsoup4
+
+# Web search (OSINT)
+duckduckgo-search
+
+# Browser automation (deep_analyze_website)
+playwright
+
+# Telegram userbot daemon
+telethon

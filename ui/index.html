@@ -39,8 +39,19 @@
         <div class="p-gutter">
             <button onclick="createNewChat()" class="w-full border border-primary bg-transparent hover:bg-primary hover:text-on-primary-container text-primary font-label-caps text-label-caps py-2 px-4 transition-all uppercase flex justify-center items-center gap-2 neon-hover">
                 <span class="material-symbols-outlined text-[16px]">add</span>
-                NEW_SESSION
+                <span data-i18n="sidebar_new_session">NEW_SESSION</span>
             </button>
+        </div>
+
+        <!-- Search Input -->
+        <div class="px-2 pt-2 pb-1">
+            <input
+                id="chat-search"
+                oninput="searchChats(this.value)"
+                placeholder="> SEARCH..."
+                data-i18n-placeholder="sidebar_search_placeholder"
+                class="w-full bg-transparent border border-outline text-on-surface font-label-mono text-[11px] px-3 py-2 focus:border-primary focus:ring-0 outline-none placeholder-on-surface placeholder-opacity-30"
+            />
         </div>
 
         <!-- Dynamic Chats List Container -->
@@ -52,11 +63,11 @@
         <div class="border-t border-outline p-2">
             <button onclick="openSettings()" class="w-full text-left font-label-mono text-label-mono text-on-surface hover:text-primary px-4 py-3 hover:bg-surface-variant flex items-center gap-3 transition-colors">
                 <span class="material-symbols-outlined text-[16px]">settings</span>
-                SETTINGS
+                <span data-i18n="sidebar_settings">SETTINGS</span>
             </button>
             <button onclick="openPanic()" class="w-full text-left font-label-mono text-label-mono text-on-surface hover:text-primary px-4 py-3 hover:bg-surface-variant flex items-center gap-3 transition-colors">
                 <span class="material-symbols-outlined text-[16px]">power_settings_new</span>
-                TERMINATE
+                <span data-i18n="sidebar_terminate">TERMINATE</span>
             </button>
         </div>
     </nav>
@@ -83,7 +94,7 @@
                 <!-- Left Actions -->
                 <button onclick="exportChat()" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-3 py-1.5 hover:border-primary">
                     <span class="material-symbols-outlined text-[16px]">description</span>
-                    EXPORT_TO_OBSIDIAN
+                    <span data-i18n="btn_export_obsidian">EXPORT_TO_OBSIDIAN</span>
                 </button>
 
                 <!-- Mode Selector -->
@@ -94,8 +105,12 @@
                     <button onclick="setMode('coder')" id="mode-coder" class="mode-btn font-label-caps text-label-caps text-on-background hover:text-primary hover:border-primary border border-transparent px-4 py-2 transition-colors relative hover:z-10 hover:ring-1 hover:ring-primary hover:bg-transparent">CODER</button>
                 </div>
 
-                <div class="flex items-center gap-4">
-                    <div class="w-[140px]"></div> <!-- Spacer -->
+                <div class="flex items-center gap-3">
+                    <!-- MCP Status Button -->
+                    <button onclick="openMCPDashboard()" id="btn-mcp-status" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-3 py-1.5 hover:border-primary">
+                        <span class="material-symbols-outlined text-[16px]">hub</span>
+                        <span data-i18n="mcp_status">MCP_STATUS</span>
+                    </button>
                     <!-- Telemetry Toggle Button -->
                     <button onclick="toggleTelemetry()" class="text-on-background hover:text-primary font-label-mono text-lg transition-colors border border-transparent hover:border-outline px-2 py-1">
                         [&gt;_]
@@ -110,14 +125,14 @@
                     <div class="border border-primary p-4 max-w-4xl self-start w-full bg-primary bg-opacity-[0.02]">
                         <div class="font-label-caps text-label-caps text-primary mb-4 uppercase border-b border-outline pb-2 flex items-center gap-2">
                             <span class="w-2 h-2 bg-primary"></span>
-                            SYSTEM_LOG
+                            <span data-i18n="welcome_title">SYSTEM_LOG</span>
                         </div>
                         <div class="font-body-lg text-body-lg text-on-background space-y-4 markdown-body">
-                            <p>Добро пожаловать в <strong>Orange OS</strong>. Вычислительное ядро успешно сопряжено с локальной SQLite-памятью.</p>
+                            <p data-i18n="welcome_desc">Welcome to <strong>Orange OS</strong>. The computing kernel has been successfully linked with the local SQLite memory.</p>
                             <ul>
-                                <li>Выберите чат слева или создайте новый.</li>
-                                <li>Агент автоматически помнит контекст текущего диалога.</li>
-                                <li>Используйте экспорт для переноса выжимки в Obsidian.</li>
+                                <li data-i18n="welcome_bullet1">Select a chat from the sidebar or create a new session.</li>
+                                <li data-i18n="welcome_bullet2">The AI agent automatically maintains conversation context.</li>
+                                <li data-i18n="welcome_bullet3">Use export tools to sync digests directly to Obsidian.</li>
                             </ul>
                         </div>
                     </div>
@@ -135,10 +150,10 @@
                             <button onclick="uploadFile()" class="absolute left-3 bottom-3 text-on-background hover:text-primary transition-colors" title="Stage document (.txt, .md, .csv, .pdf)">
                                 <span class="material-symbols-outlined">attach_file</span>
                             </button>
-                            <textarea id="user-input" class="w-full bg-transparent border border-transparent border-b-outline focus:border-primary focus:ring-1 focus:ring-primary text-on-background font-body-lg resize-none py-3 pl-10 pr-4 placeholder-on-background placeholder-opacity-30 transition-all neon-focus" placeholder="&gt; ENTER DIRECTIVE..." rows="1" style="height:48px;overflow-y:hidden;"></textarea>
+                            <textarea id="user-input" class="w-full bg-transparent border border-transparent border-b-outline focus:border-primary focus:ring-1 focus:ring-primary text-on-background font-body-lg resize-none py-3 pl-10 pr-4 placeholder-on-background placeholder-opacity-30 transition-all neon-focus" placeholder="&gt; ENTER DIRECTIVE..." data-i18n-placeholder="placeholder_directive" rows="1" style="height:48px;overflow-y:hidden;"></textarea>
                         </div>
                         <button id="send-btn" onclick="sendToAgent()" class="bg-transparent border border-primary text-primary hover:bg-primary hover:text-on-primary-container font-label-caps text-label-caps px-6 py-3 uppercase transition-all shrink-0 h-[48px] flex items-center neon-hover">
-                            INITIATE
+                            <span data-i18n="btn_initiate">INITIATE</span>
                         </button>
                     </div>
                 </div>
@@ -219,15 +234,16 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
     <div id="settings-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
         <div class="w-full max-w-md border border-outline-variant p-6 bg-surface flex flex-col gap-4 relative">
             <div class="flex justify-between items-center border-b border-outline-variant pb-2">
-                <h2 class="font-label-caps text-label-caps text-primary">[GLOBAL_SETTINGS]</h2>
+                <h2 class="font-label-caps text-label-caps text-primary" data-i18n="settings_title">[GLOBAL_SETTINGS]</h2>
                 <button onclick="closeSettings()" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
             </div>
             <div class="flex gap-4 border-b border-outline-variant pb-2">
-                <span class="text-primary font-label-mono text-label-mono border-b border-primary">API &amp; AUTH</span>
-                <span class="text-on-surface-variant font-label-mono text-label-mono">SYSTEM PATHS</span>
-                <span class="text-on-surface-variant font-label-mono text-label-mono">DEMONS</span>
+                <button onclick="switchSettingsTab('api')" id="tab-api" class="text-primary font-label-mono text-label-mono border-b border-primary pb-0.5 cursor-pointer" data-i18n="tab_api">API &amp; AUTH</button>
+                <button onclick="switchSettingsTab('paths')" id="tab-paths" class="text-on-surface-variant font-label-mono text-label-mono hover:text-primary cursor-pointer" data-i18n="tab_paths">SYSTEM PATHS</button>
+                <button onclick="switchSettingsTab('demons')" id="tab-demons" class="text-on-surface-variant font-label-mono text-label-mono hover:text-primary cursor-pointer" data-i18n="tab_demons">DEMONS</button>
             </div>
-            <div class="space-y-4">
+            <!-- Panel: API & AUTH (default visible) -->
+            <div id="settings-panel-api" class="space-y-4">
                 <div>
                     <label class="text-[10px] text-on-surface-variant block mb-1">AUTH_TOKEN_HASH</label>
                     <input id="setting-auth-token" class="w-full bg-transparent border-0 border-b border-outline-variant text-body-sm font-label-mono py-1 focus:ring-0" type="password" value="************************"/>
@@ -239,10 +255,50 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
                         <button id="btn-telemetry-off" onclick="updateTelemetrySettingsUI('OFF')" class="px-3 py-1 text-on-surface text-[10px]">OFF</button>
                     </div>
                 </div>
+                <div class="flex justify-between items-center py-2">
+                    <span class="font-label-mono text-label-mono">TELEGRAM_DAEMON</span>
+                    <div class="flex border border-outline-variant">
+                        <button id="btn-tgdaemon-on" onclick="updateTelegramDaemonUI('ON')" class="px-3 py-1 text-on-surface text-[10px]">ON</button>
+                        <button id="btn-tgdaemon-off" onclick="updateTelegramDaemonUI('OFF')" class="px-3 py-1 bg-primary text-on-primary text-[10px] font-bold">OFF</button>
+                    </div>
+                </div>
+                <div class="flex justify-between items-center py-2">
+                    <span class="font-label-mono text-label-mono">LANGUAGE / ЯЗЫК</span>
+                    <select id="language-toggle" onchange="switchLanguage(this.value)" class="bg-black border border-outline-variant text-[10px] font-label-mono text-primary px-2 py-1 outline-none focus:border-primary">
+                        <option value="ru">RU</option>
+                        <option value="en">EN</option>
+                    </select>
+                </div>
+            </div>
+            <!-- Panel: SYSTEM PATHS -->
+            <div id="settings-panel-paths" class="space-y-3 hidden">
+                <div>
+                    <label class="text-[10px] text-on-surface-variant block mb-1">OBSIDIAN_VAULT_PATH</label>
+                    <div id="status-vault-path" class="font-label-mono text-[11px] text-primary border border-outline p-2 opacity-70">—</div>
+                </div>
+                <div>
+                    <label class="text-[10px] text-on-surface-variant block mb-1">HTTP_SERVER_PORT</label>
+                    <div id="status-orange-port" class="font-label-mono text-[11px] text-primary border border-outline p-2 opacity-70">—</div>
+                </div>
+            </div>
+            <!-- Panel: DEMONS -->
+            <div id="settings-panel-demons" class="space-y-3 hidden">
+                <div class="flex justify-between items-center p-2 border border-outline">
+                    <span class="font-label-mono text-[11px]">WATCHDOG</span>
+                    <span id="status-watchdog" class="text-primary text-[10px] font-bold">ACTIVE</span>
+                </div>
+                <div class="flex justify-between items-center p-2 border border-outline">
+                    <span class="font-label-mono text-[11px]">TELEGRAM_DAEMON</span>
+                    <span id="status-telegram" class="text-[#00FF66] text-[10px] font-bold">MOCK</span>
+                </div>
+                <div class="flex justify-between items-center p-2 border border-outline">
+                    <span class="font-label-mono text-[11px]">MCP_CLIENT</span>
+                    <span id="status-mcp" class="text-on-surface-variant text-[10px] font-bold">OFFLINE</span>
+                </div>
             </div>
             <div class="flex gap-2 mt-4">
-                <button onclick="closeSettings()" class="flex-1 py-2 border border-outline-variant text-on-surface font-bold text-label-caps hover:bg-surface-variant transition-colors">CANCEL</button>
-                <button onclick="saveSettings()" class="flex-1 py-2 bg-primary text-on-primary font-bold text-label-caps hover:bg-primary/80 transition-colors">SAVE</button>
+                <button onclick="closeSettings()" class="flex-1 py-2 border border-outline-variant text-on-surface font-bold text-label-caps hover:bg-surface-variant transition-colors" data-i18n="btn_cancel">CANCEL</button>
+                <button onclick="saveSettings()" class="flex-1 py-2 bg-primary text-on-primary font-bold text-label-caps hover:bg-primary/80 transition-colors" data-i18n="btn_save">SAVE</button>
             </div>
         </div>
     </div>
@@ -258,22 +314,22 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
                 <div class="flex items-center justify-between p-3 border border-outline-variant">
                     <span class="font-label-mono text-label-mono">SQLite_CORE</span>
                     <div class="flex items-center gap-2">
-                        <span class="text-[10px] text-primary">SYNCING</span>
-                        <div class="w-3 h-3 bg-primary"></div>
+                        <span class="text-[10px] text-primary" data-mcp="sqlite-status">LOADING...</span>
+                        <div class="w-3 h-3 bg-primary animate-pulse"></div>
                     </div>
                 </div>
                 <div class="flex items-center justify-between p-3 border border-outline-variant">
-                    <span class="font-label-mono text-label-mono">Git_REMOTE</span>
+                    <span class="font-label-mono text-label-mono">MCP_SERVER</span>
                     <div class="flex items-center gap-2">
-                        <span class="text-[10px] text-on-background">CONNECTED</span>
-                        <div class="w-3 h-3 bg-on-background"></div>
+                        <span class="text-[10px] text-on-surface-variant" data-mcp="mcp-status">LOADING...</span>
+                        <div class="w-3 h-3 bg-outline-variant"></div>
                     </div>
                 </div>
-                <div class="flex items-center justify-between p-3 border border-outline-variant opacity-50">
-                    <span class="font-label-mono text-label-mono">FILESYSTEM_ROOT</span>
+                <div class="flex items-center justify-between p-3 border border-outline-variant opacity-60">
+                    <span class="font-label-mono text-label-mono">WATCHDOG_OBSERVER</span>
                     <div class="flex items-center gap-2">
-                        <span class="text-[10px] text-on-surface-variant">OFFLINE</span>
-                        <div class="w-3 h-3 bg-[#262626]"></div>
+                        <span class="text-[10px] text-primary">ACTIVE</span>
+                        <div class="w-3 h-3 bg-primary"></div>
                     </div>
                 </div>
             </div>
@@ -286,7 +342,7 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
             <div class="flex justify-between items-center border-b border-outline-variant pb-2">
                 <div class="flex items-center gap-2 text-primary">
                     <span class="material-symbols-outlined font-bold">priority_high</span>
-                    <h2 class="font-label-caps text-label-caps">SYSTEM_MODIFICATION_DETECTED</h2>
+                    <h2 class="font-label-caps text-label-caps" data-i18n="title_override">SYSTEM_MODIFICATION_DETECTED</h2>
                 </div>
                 <button onclick="closeModal('execution-override-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
             </div>
@@ -294,8 +350,8 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
                 <!-- Command will be inserted here -->
             </div>
             <div class="flex gap-2">
-                <button onclick="handleOverrideResponse(false)" class="flex-1 py-3 border border-on-background text-on-background font-bold text-label-caps hover:bg-on-background hover:text-background transition-all">DENY</button>
-                <button onclick="handleOverrideResponse(true)" class="flex-1 py-3 bg-primary text-on-primary font-bold text-label-caps hover:bg-primary/80 transition-all">PERMIT</button>
+                <button onclick="handleOverrideResponse(false)" class="flex-1 py-3 border border-on-background text-on-background font-bold text-label-caps hover:bg-on-background hover:text-background transition-all" data-i18n="btn_deny">DENY</button>
+                <button onclick="handleOverrideResponse(true)" class="flex-1 py-3 bg-primary text-on-primary font-bold text-label-caps hover:bg-primary/80 transition-all" data-i18n="btn_permit">PERMIT</button>
             </div>
         </div>
     </div>
@@ -303,35 +359,40 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
     <!-- 4. SYSTEM_PANIC (OVERLAY) - Opaque black layout-blocker -->
     <div id="system-panic-modal" class="fixed inset-0 bg-black flex items-center justify-center z-[99999] hidden">
         <div class="text-center p-12 border-4 border-primary bg-background max-w-xl">
-            <h1 class="text-headline-lg font-headline-lg text-primary mb-4 animate-pulse">CRITICAL KERNEL PANIC</h1>
-            <p id="system-panic-text" class="font-label-mono text-label-mono text-white max-w-md mx-auto break-words whitespace-pre-wrap">THE SYSTEM HAS ENCOUNTERED A FATAL KERNEL EXCEPTION.</p>
+            <h1 class="text-headline-lg font-headline-lg text-primary mb-4 animate-pulse" data-i18n="title_panic">CRITICAL KERNEL PANIC</h1>
+            <p id="system-panic-text" class="font-label-mono text-label-mono text-white max-w-md mx-auto break-words whitespace-pre-wrap" data-i18n="desc_panic">THE SYSTEM HAS ENCOUNTERED A FATAL KERNEL EXCEPTION.</p>
         </div>
     </div>
 
-    <!-- 5. ATTACHMENT_CONFIG Modal -->
+    <!-- 5. ATTACHMENT_CONFIG Modal (PDF range config) -->
     <div id="attachment-config-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
         <div class="w-full max-w-md border border-outline-variant p-6 bg-surface flex flex-col gap-4 relative">
             <div class="flex justify-between items-center border-b border-outline-variant pb-2">
                 <div class="flex items-center gap-2 text-primary">
                     <span class="material-symbols-outlined">description</span>
-                    <h2 class="font-label-caps text-label-caps">HEAVY_PAYLOAD_DETECTED</h2>
+                    <h2 class="font-label-caps text-label-caps" data-i18n="heavy_payload_title">HEAVY_PAYLOAD_DETECTED</h2>
                 </div>
                 <button onclick="closeModal('attachment-config-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
             </div>
-            <p class="text-on-surface-variant text-[10px] font-label-mono">SOURCE: kernel_dump_09.pdf (14.2 MB)</p>
+            <p id="pdf-config-filename" class="text-on-surface-variant text-[10px] font-label-mono">SOURCE: —</p>
+            <input type="hidden" id="pdf-page-count" value="1"/>
             <div class="space-y-3 mt-2">
                 <label class="flex items-center gap-3 cursor-pointer group">
-                    <div class="w-4 h-4 border border-primary flex items-center justify-center">
-                        <div class="w-2 h-2 bg-primary"></div>
-                    </div>
-                    <span class="font-label-mono text-label-mono group-hover:text-primary">Extract All Pages</span>
+                    <input type="checkbox" id="pdf-extract-all" checked
+                        class="w-4 h-4 border border-primary bg-transparent accent-primary cursor-pointer"/>
+                    <span class="font-label-mono text-label-mono group-hover:text-primary" data-i18n="pdf_extract_all">Extract All Pages</span>
                 </label>
                 <label class="flex items-center gap-3 cursor-pointer group">
-                    <div class="w-4 h-4 border border-outline-variant flex items-center justify-center"></div>
-                    <span class="font-label-mono text-label-mono group-hover:text-primary">Specify Range</span>
+                    <span class="font-label-mono text-label-mono group-hover:text-primary" data-i18n="pdf_specify_range">Specify Range (e.g. 1-10):</span>
                 </label>
+                <input id="pdf-range-input"
+                    class="w-full bg-transparent border border-outline-variant p-2 text-[10px] font-label-mono focus:border-primary ring-0 outline-none"
+                    placeholder="e.g. 1-10" data-i18n-placeholder="pdf_range_placeholder" type="text"/>
             </div>
-            <input class="mt-2 w-full bg-transparent border border-outline-variant p-2 text-[10px] font-label-mono focus:border-primary ring-0 outline-none" placeholder="e.g. 1-10, 15, 20" type="text"/>
+            <div class="flex gap-2 mt-2">
+                <button onclick="closeModal('attachment-config-modal')" class="flex-1 py-2 border border-outline-variant text-on-surface font-bold text-label-caps hover:bg-surface-variant transition-colors" data-i18n="btn_cancel">CANCEL</button>
+                <button onclick="confirmPdfAttachment()" class="flex-1 py-2 bg-primary text-on-primary font-bold text-label-caps hover:bg-primary/80 transition-colors" data-i18n="btn_confirm">CONFIRM</button>
+            </div>
         </div>
     </div>
 
@@ -339,34 +400,26 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
     <div id="inline-assets-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
         <div class="w-full max-w-md border border-outline-variant p-6 bg-surface flex flex-col gap-6 relative">
             <div class="flex justify-between items-center border-b border-outline-variant pb-2">
-                <h2 class="font-label-caps text-label-caps text-primary">[IN_LINE_ASSETS_&amp;_ACTIONS]</h2>
+                <h2 class="font-label-caps text-label-caps text-primary" data-i18n="inline_assets_title">[IN_LINE_ASSETS_&amp;_ACTIONS]</h2>
                 <button onclick="closeModal('inline-assets-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
             </div>
             <div>
-                <h2 class="font-label-caps text-label-caps text-primary border-b border-outline-variant pb-2 mb-4">IN_LINE_ASSETS</h2>
-                <div class="flex flex-wrap gap-2">
-                    <div class="flex items-center gap-2 px-2 py-1 border border-outline-variant font-label-mono text-[10px] hover:border-primary cursor-pointer transition-colors">
-                        [ log_error.txt ] <span class="material-symbols-outlined text-[10px]">close</span>
-                    </div>
-                    <div class="flex items-center gap-2 px-2 py-1 border border-outline-variant font-label-mono text-[10px] hover:border-primary cursor-pointer transition-colors">
-                        [ core_dump_v2.bin ] <span class="material-symbols-outlined text-[10px]">close</span>
-                    </div>
-                    <div class="flex items-center gap-2 px-2 py-1 border border-outline-variant font-label-mono text-[10px] hover:border-primary cursor-pointer transition-colors">
-                        [ system_config.yaml ] <span class="material-symbols-outlined text-[10px]">close</span>
-                    </div>
+                <h2 class="font-label-caps text-label-caps text-primary border-b border-outline-variant pb-2 mb-4" data-i18n="in_line_assets">IN_LINE_ASSETS</h2>
+                <div class="flex flex-wrap gap-2" id="inline-assets-list">
+                    <!-- Dynamic content -->
                 </div>
             </div>
             <div>
-                <h2 class="font-label-caps text-label-caps text-primary border-b border-outline-variant pb-2 mb-4">CODE_BLOCK_ACTIONS</h2>
+                <h2 class="font-label-caps text-label-caps text-primary border-b border-outline-variant pb-2 mb-4" data-i18n="code_block_actions_title">CODE_BLOCK_ACTIONS</h2>
                 <div class="border border-outline-variant overflow-hidden">
                     <div class="bg-outline-variant/30 px-3 py-1 flex justify-between items-center">
-                        <span class="text-[10px] font-label-mono opacity-60">PYTHON_CORE_V1</span>
+                        <span class="text-[10px] font-label-mono opacity-60" id="inline-code-lang">PYTHON_CORE</span>
                         <div class="flex gap-2">
-                            <button class="text-[10px] font-bold text-on-background hover:text-primary">[ COPY ]</button>
-                            <button class="text-[10px] font-bold text-primary hover:text-white">[ EXECUTE ]</button>
+                            <button id="inline-copy-btn" class="text-[10px] font-bold text-on-background hover:text-primary" data-i18n="btn_copy">[ COPY ]</button>
+                            <button id="inline-execute-btn" onclick="executeCodeFromModal(document.getElementById('inline-code-content').textContent)" class="text-[10px] font-bold text-primary hover:text-white" data-i18n="btn_execute">[ EXECUTE ]</button>
                         </div>
                     </div>
-                    <div class="p-3 font-label-mono text-[10px]">
+                    <div id="inline-code-content" class="p-3 font-label-mono text-[10px] whitespace-pre-wrap break-all">
                         <span class="text-primary">def</span> <span class="text-on-background">initialize_protocol</span>():<br/>
                         &nbsp;&nbsp;&nbsp;&nbsp;print(<span class="text-on-surface-variant">"ORANGE_OS_ACTIVE"</span>)
                     </div>

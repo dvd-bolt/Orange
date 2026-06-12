@@ -96,6 +96,14 @@ def update_chat_title(chat_id: str, title: str):
             )
             conn.commit()
 
+def delete_chat(chat_id: str) -> bool:
+    """Удаляет чат и все его сообщения (CASCADE через ON DELETE CASCADE)"""
+    with _lock:
+        with get_connection() as conn:
+            conn.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
+            conn.commit()
+    return True
+
 # --- CRUD для сообщений ---
 
 def add_message(chat_id: str, role: str, content: str):

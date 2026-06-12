@@ -48,3 +48,31 @@ Thumbs.db
 
 # Temporary files
 temp_test.txt
+a
+a.tmp
+
+# Rust build artifacts
+orange_core/target/
+
+# Node modules
+mcp_servers/node_modules/
+node_modules/
+
+# Stitch / design reference files (not part of the runtime)
+stitch_orange_terminal_interface/
+
+# Scratch / test files
+scratch/
+test_vault/
+
+# Telegram session files
+config/orange_tg_session*
+
+# Gemini / Agent internal state
+.agents/
+
+# Obsidian local folder
+.obsidian/
+
+# Local settings
+config/settings.json

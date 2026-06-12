@@ -1,5 +1,30 @@
 import orange_core
 from pydantic_ai import RunContext
+from core.dependencies import OrangeDeps
+import os
+import datetime
+
+def validate_path(vault_root: str, user_path: str) -> str:
+    """
+    Resolves the path to an absolute normalized path.
+    Checks if it is inside the absolute vault root using os.path.commonpath.
+    Raises ValueError with a clear error message if the path resides outside the vault root.
+    """
+    abs_vault_root = os.path.abspath(os.path.normpath(vault_root))
+    if os.path.isabs(user_path):
+        resolved_path = os.path.abspath(os.path.normpath(user_path))
+    else:
+        resolved_path = os.path.abspath(os.path.normpath(os.path.join(abs_vault_root, user_path)))
+        
+    try:
+        common = os.path.commonpath([abs_vault_root, resolved_path])
+    except ValueError as e:
+        raise ValueError(f"Путь находится вне хранилища: {user_path}. Ошибка: {e}")
+        
+    if common != abs_vault_root:
+        raise ValueError(f"Путь находится вне хранилища: {resolved_path} не входит в {abs_vault_root}")
+        
+    return resolved_path
 
 async def deep_analyze_website(ctx: RunContext, url: str) -> str:
     """Глубокий анализ веб-сайта с рендерингом JavaScript."""
@@ -19,13 +44,21 @@ async def deep_analyze_website(ctx: RunContext, url: str) -> str:
     except Exception as e:
         return f"Ошибка при глубоком анализе сайта: {str(e)}"
 
-def scan_vault_fast(path: str) -> str:
+def scan_vault_fast(ctx: RunContext[OrangeDeps], path: str) -> str:
     """Рекурсивный поиск .md файлов в хранилище Obsidian."""
-    return orange_core.scan_vault_fast(path)
+    try:
+        valid_path = validate_path(ctx.deps.obsidian_vault_path, path)
+        return orange_core.scan_vault_fast(valid_path)
+    except Exception as e:
+        return f"Ошибка: {str(e)}"
 
-def read_file_fast(file_path: str) -> str:
+def read_file_fast(ctx: RunContext[OrangeDeps], file_path: str) -> str:
     """Быстрое чтение содержимого файла с диска."""
-    return orange_core.read_file_fast(file_path)
+    try:
+        valid_path = validate_path(ctx.deps.obsidian_vault_path, file_path)
+        return orange_core.read_file_fast(valid_path)
+    except Exception as e:
+        return f"Ошибка: {str(e)}"
 
 def fetch_website_fast(url: str) -> str:
     """Загрузка HTML-кода веб-сайта для OSINT-анализа."""
@@ -33,22 +66,20 @@ def fetch_website_fast(url: str) -> str:
 
 from core.file_ops import atomic_write_obsidian_note
 
-async def rewrite_file(ctx: RunContext, file_path: str, content: str) -> str:
+async def rewrite_file(ctx: RunContext[OrangeDeps], file_path: str, content: str) -> str:
     """
     Безопасная и атомарная перезапись файла (особенно для заметок Obsidian).
     Использует временные файлы и механизм retry для обхода блокировок iCloud.
     """
     try:
-        await atomic_write_obsidian_note(file_path, content)
+        valid_path = validate_path(ctx.deps.obsidian_vault_path, file_path)
+        await atomic_write_obsidian_note(valid_path, content)
         return "Успех: файл перезаписан"
     except Exception as e:
         return f"Ошибка: {str(e)}"
 
-import os
 import aiofiles
 from core.markdown_ops import append_task_to_markdown
-
-OBSIDIAN_ROOT = r"C:\icloud\iCloudDrive\iCloud~md~obsidian\obs_chest"
 
 async def add_task(ctx: RunContext, file_path: str, task: str) -> str:
     """
@@ -56,12 +87,14 @@ async def add_task(ctx: RunContext, file_path: str, task: str) -> str:
     Сохраняет структуру Obsidian.
     """
     try:
-        # Жесткая защита: извлекаем только имя файла и принудительно кладем в папку 2026
+        # Жесткая защита: извлекаем только имя файла и принудительно кладем в папку текущего года
         file_name = os.path.basename(file_path)
         if not file_name.lower().endswith('.md'):
             file_name += '.md'
-        safe_rel_path = os.path.join("2026", file_name)
-        full_path = os.path.join(OBSIDIAN_ROOT, safe_rel_path)
+        current_year = str(datetime.date.today().year)
+        safe_rel_path = os.path.join(current_year, file_name)
+        obsidian_root = ctx.deps.obsidian_vault_path
+        full_path = os.path.join(obsidian_root, safe_rel_path)
         full_path = os.path.normpath(full_path)
         
         print(f"[DEBUG add_task] Агент передал: {file_path} | Реально пишем в: {full_path}")
@@ -247,7 +280,8 @@ async def export_active_chat(chat_id: str, deps) -> str:
     markdown_result = getattr(result, 'data', getattr(result, 'output', str(result)))
     
     filename = f"Export_{uuid.uuid4().hex[:8]}.md"
-    target_path = os.path.join(OBSIDIAN_ROOT, "_Inbox", filename)
+    obsidian_root = deps.obsidian_vault_path
+    target_path = os.path.join(obsidian_root, "_Inbox", filename)
     
     await atomic_write_obsidian_note(target_path, markdown_result)
     return f"Успех! Чат экспортирован в {target_path}"
@@ -361,11 +395,18 @@ async def deep_research(ctx: RunContext, topic: str) -> str:
 
 # --- ИНСТРУМЕНТ ЛОКАЛЬНОГО ВЫПОЛНЕНИЯ КОДА (SANDBOX) ---
 
-async def execute_python(ctx: RunContext, code: str) -> str:
+async def execute_python(ctx: RunContext[OrangeDeps], code: str) -> str:
     """
     Запускает переданный Python-код в локальном процессе (subprocess) с таймаутом 10 секунд.
     Перехватывает stdout и stderr выполнения. Позволяет тестировать скрипты и производить вычисления.
     """
+    if not ctx.deps.request_override:
+        return "Ошибка: Выполнение Python-кода запрещено, так как callback одобрения не настроен."
+        
+    approved = await ctx.deps.request_override(code)
+    if not approved:
+        return "Ошибка: Выполнение Python-кода было отклонено пользователем."
+
     import sys
     import subprocess
     import tempfile
@@ -432,7 +473,8 @@ async def list_existing_notes(ctx: RunContext) -> str:
     
     try:
         # Рекурсивный поиск .md файлов
-        pattern = os.path.join(OBSIDIAN_ROOT, "**", "*.md")
+        obsidian_root = ctx.deps.obsidian_vault_path
+        pattern = os.path.join(obsidian_root, "**", "*.md")
         files = glob.glob(pattern, recursive=True)
         
         notes = []

@@ -91,6 +91,7 @@ let currentMode = 'auto';
 let telemetryOpen = false;
 let pendingAttachments = [];
 let currentTelemetrySetting = 'ON';
+let currentTelegramDaemonSetting = 'OFF';
 
 // DOM Elements
 const inputEl = document.getElementById('user-input');
@@ -221,6 +222,8 @@ function setMode(mode) {
 }
 
 // File uploading integration
+let pendingPdfPath = null;
+
 async function uploadFile() {
     if (!window.pywebview) return;
     showLoader();
@@ -231,19 +234,60 @@ async function uploadFile() {
         if (result.status === 'success') {
             pendingAttachments.push({
                 filename: result.filename,
-                content: result.content
+                file_path: result.file_path
             });
             renderAttachmentChips();
+        } else if (result.status === 'pdf_config_needed') {
+            // PDF — show range config modal
+            pendingPdfPath = result.file_path;
+            const filenameEl = document.getElementById('pdf-config-filename');
+            if (filenameEl) filenameEl.textContent = `SOURCE: ${result.filename} (${result.page_count} pgs)`;
+            const pageCountEl = document.getElementById('pdf-page-count');
+            if (pageCountEl) pageCountEl.value = result.page_count;
+            openModal('attachment-config-modal');
         } else if (result.status === 'cancelled') {
             // Cancelled by user
         } else {
-            appendMessage('Система', `Ошибка импорта документа: ${result.message}`, 'sys');
+            appendMessage('System', `Error importing document: ${result.message}`, 'sys');
         }
     } catch (e) {
         removeLoader();
-        appendMessage('Система', `Сбой импорта документа: ${e.toString()}`, 'sys');
+        appendMessage('System', `Failed to import document: ${e.toString()}`, 'sys');
     }
 }
+
+async function confirmPdfAttachment() {
+    const allPagesCheck = document.getElementById('pdf-extract-all');
+    const allPages = allPagesCheck ? allPagesCheck.checked : true;
+    const pageCountEl = document.getElementById('pdf-page-count');
+    const totalPages = pageCountEl ? parseInt(pageCountEl.value) || 1 : 1;
+    let startPage = 1, endPage = totalPages;
+    if (!allPages) {
+        const rangeInput = document.getElementById('pdf-range-input');
+        if (rangeInput && rangeInput.value.trim()) {
+            const match = rangeInput.value.trim().match(/^(\d+)-(\d+)$/);
+            if (match) { startPage = parseInt(match[1]); endPage = parseInt(match[2]); }
+        }
+    }
+    closeModal('attachment-config-modal');
+    if (!pendingPdfPath) return;
+    showLoader();
+    try {
+        const res = JSON.parse(await window.pywebview.api.api_stage_pdf_with_range(pendingPdfPath, startPage, endPage));
+        removeLoader();
+        if (res.status === 'success') {
+            pendingAttachments.push({ filename: res.filename, file_path: res.file_path });
+            renderAttachmentChips();
+        } else {
+            appendMessage('System', `PDF extraction error: ${res.message}`, 'sys');
+        }
+    } catch(e) {
+        removeLoader();
+        appendMessage('System', `PDF failure: ${e}`, 'sys');
+    }
+    pendingPdfPath = null;
+}
+window.confirmPdfAttachment = confirmPdfAttachment;
 
 function renderAttachmentChips() {
     const container = document.getElementById('attachment-chips-container');
@@ -274,7 +318,7 @@ function appendMessage(sender, text, type = 'sys') {
     
     if (type === 'sys') {
         // System / Agent message style
-        if (sender === 'Система') {
+        if (sender === 'System') {
             wrapper.className = "font-label-mono text-label-mono text-primary flex items-center gap-2 max-w-4xl self-center w-full justify-center opacity-80";
             wrapper.innerHTML = `<span class="material-symbols-outlined text-[14px]">info</span><span>System: ${text}</span>`;
         } else {
@@ -392,9 +436,18 @@ async function refreshChatList() {
             icon.innerText = "terminal";
             
             const title = document.createElement('span');
-            title.className = "flex-1 truncate";
-            title.innerText = (isPinned ? '📌 ' : '') + (chat.title || 'Новый диалог');
-            
+            title.className = "flex-1 truncate cursor-text";
+            title.innerText = (isPinned ? '📌 ' : '') + (chat.title || 'New Chat');
+            title.title = "Double click to rename";
+            title.ondblclick = async (e) => {
+                e.stopPropagation();
+                const newName = prompt("New chat name:", chat.title || '');
+                if (newName && newName.trim()) {
+                    await window.pywebview.api.api_rename_chat(chat.id, newName.trim());
+                    refreshChatList();
+                }
+            };
+
             const pinBtn = document.createElement('span');
             pinBtn.className = "opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-primary";
             pinBtn.innerText = "📌";
@@ -403,10 +456,27 @@ async function refreshChatList() {
                 await window.pywebview.api.api_toggle_pin(chat.id);
                 refreshChatList();
             };
-            
+
+            const deleteBtn = document.createElement('span');
+            deleteBtn.className = "opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-error ml-1 text-on-surface-variant text-xs font-bold";
+            deleteBtn.innerText = "✕";
+            deleteBtn.title = "Delete Chat";
+            deleteBtn.onclick = async (e) => {
+                e.stopPropagation();
+                if (!confirm(`Delete chat "${chat.title || 'New Chat'}"?`)) return;
+                await window.pywebview.api.api_delete_chat(chat.id);
+                if (chat.id === currentChatId) {
+                    currentChatId = null;
+                    if (container) container.innerHTML = '';
+                    appendMessage('System', 'Chat deleted. Create a new session.', 'sys');
+                }
+                refreshChatList();
+            };
+
             item.appendChild(icon);
             item.appendChild(title);
             item.appendChild(pinBtn);
+            item.appendChild(deleteBtn);
             listEl.appendChild(item);
         });
     } catch (e) {
@@ -416,13 +486,40 @@ async function refreshChatList() {
 
 window.refreshChatList = refreshChatList;
 
+// Фича 9: Поиск по чатам
+async function searchChats(query) {
+    if (!query.trim()) { refreshChatList(); return; }
+    if (!window.pywebview) return;
+    try {
+        const results = await window.pywebview.api.api_search_chats(query);
+        const listEl = document.getElementById('chat-list');
+        if (!listEl) return;
+        listEl.innerHTML = '';
+        if (!results.length) {
+            listEl.innerHTML = '<div class="px-4 py-3 font-label-mono text-[11px] text-on-surface opacity-40">No results found</div>';
+            return;
+        }
+        results.forEach(msg => {
+            const item = document.createElement('button');
+            item.className = "w-full text-left font-label-mono text-[11px] text-on-surface hover:text-primary px-4 py-3 hover:bg-surface-variant flex flex-col gap-1 transition-colors";
+            item.onclick = () => loadChat(msg.chat_id);
+            item.innerHTML = `
+                <span class="text-primary text-[10px] truncate">${escapeHTML(msg.title || 'Untitled')}</span>
+                <span class="text-[10px] opacity-60 truncate">${escapeHTML((msg.content || '').substring(0, 60))}...</span>
+            `;
+            listEl.appendChild(item);
+        });
+    } catch(e) { console.error('Search error:', e); }
+}
+window.searchChats = searchChats;
+
 // Create new chat session
 async function createNewChat() {
     if (!window.pywebview) return;
     try {
-        currentChatId = await window.pywebview.api.api_create_chat("Новый диалог");
+        currentChatId = await window.pywebview.api.api_create_chat("New Chat");
         if (container) container.innerHTML = '';
-        appendMessage('Система', 'Инициирован новый сеанс связи.', 'sys');
+        appendMessage('System', 'New connection session initiated.', 'sys');
         refreshChatList();
     } catch (e) {
         console.error("Error creating chat: ", e);
@@ -437,14 +534,14 @@ async function loadChat(chatId) {
         const history = await window.pywebview.api.api_load_chat(chatId);
         if (container) container.innerHTML = '';
         if(history.length === 0) {
-            appendMessage('Система', 'Сеанс связи установлен. Диалог пуст.', 'sys');
+            appendMessage('System', 'Connection session established. Dialogue is empty.', 'sys');
         } else {
             history.forEach(msg => {
-                if (msg.content && msg.content.startsWith("[Служебный системный контекст:")) {
+                if (msg.content && (msg.content.startsWith("[Служебный системный контекст:") || msg.content.startsWith("[System context:") || msg.content.startsWith("[Service system context:"))) {
                     return;
                 }
                 if(msg.role === 'user') {
-                    appendMessage('Пользователь', msg.content, 'user');
+                    appendMessage('User', msg.content, 'user');
                 } else {
                     appendMessage('Orange', msg.content, 'sys');
                 }
@@ -459,16 +556,16 @@ async function loadChat(chatId) {
 // Export Chat to Markdown
 async function exportChat() {
     if(!currentChatId) {
-        appendMessage('Система', 'Ошибка: Нет активного чата для экспорта.', 'sys');
+        appendMessage('System', 'Error: No active chat to export.', 'sys');
         return;
     }
-    appendMessage('Система', 'Начинаю экспорт чата...', 'sys');
+    appendMessage('System', 'Starting chat export...', 'sys');
     try {
         const result = await window.pywebview.api.api_export_chat();
-        appendMessage('Система', result, 'sys');
+        appendMessage('System', result, 'sys');
         showToast();
     } catch(e) {
-        appendMessage('Система', `Ошибка при экспорте чата: ${e.toString()}`, 'sys');
+        appendMessage('System', `Error exporting chat: ${e.toString()}`, 'sys');
     }
 }
 
@@ -479,17 +576,11 @@ async function sendToAgent() {
     if(!prompt) return;
 
     const profile = currentMode;
-    appendMessage('Пользователь', prompt, 'user');
+    appendMessage('User', prompt, 'user');
     
-    // Construct final prompt with attachment content if any
-    let finalPrompt = prompt;
-    if (pendingAttachments.length > 0) {
-        pendingAttachments.forEach(file => {
-            finalPrompt += `\n\n[Вложение: ${file.filename}]\n${file.content}`;
-        });
-        pendingAttachments = [];
-        renderAttachmentChips();
-    }
+    const attachmentPaths = pendingAttachments.map(f => f.file_path);
+    pendingAttachments = [];
+    renderAttachmentChips();
     
     inputEl.value = '';
     inputEl.style.height = '48px';
@@ -501,9 +592,10 @@ async function sendToAgent() {
     showLoader();
 
     try {
-        const result = await window.pywebview.api.run_agent(profile, finalPrompt);
+        const result = await window.pywebview.api.run_agent(profile, prompt, JSON.stringify(attachmentPaths));
         removeLoader();
         appendMessage('Orange', result, 'sys');
+        currentChatId = await window.pywebview.api.api_get_current_chat_id();
         refreshChatList();
     } catch(e) {
         removeLoader();
@@ -511,7 +603,7 @@ async function sendToAgent() {
     } finally {
         if (sendBtn) {
             sendBtn.disabled = false;
-            sendBtn.textContent = 'ИНИЦИИРОВАТЬ';
+            sendBtn.textContent = 'INITIATE';
         }
         inputEl.focus();
         scrollToBottom();
@@ -526,7 +618,7 @@ async function openSettings() {
         const settings = JSON.parse(settingsStr);
         
         if (settings.status === 'error') {
-            appendMessage('Система', `Не удалось загрузить настройки: ${settings.message}`, 'sys');
+            appendMessage('System', `Failed to load settings: ${settings.message}`, 'sys');
             return;
         }
         
@@ -536,6 +628,7 @@ async function openSettings() {
         }
         
         updateTelemetrySettingsUI(settings.telemetry_stream || 'ON');
+        updateTelegramDaemonUI(settings.telegram_daemon || 'OFF');
         
         openModal('settings-modal');
     } catch (e) {
@@ -547,28 +640,73 @@ function closeSettings() {
     closeModal('settings-modal');
 }
 
+// Фича 3: Переключение вкладок настроек
+function switchSettingsTab(tabName) {
+    ['api', 'paths', 'demons'].forEach(t => {
+        document.getElementById(`settings-panel-${t}`)?.classList.add('hidden');
+        const btn = document.getElementById(`tab-${t}`);
+        if (btn) btn.className = "text-on-surface-variant font-label-mono text-label-mono hover:text-primary cursor-pointer";
+    });
+    document.getElementById(`settings-panel-${tabName}`)?.classList.remove('hidden');
+    const activeBtn = document.getElementById(`tab-${tabName}`);
+    if (activeBtn) activeBtn.className = "text-primary font-label-mono text-label-mono border-b border-primary pb-0.5 cursor-pointer";
+    // Загружаем актуальные статусы при переходе на системные вкладки
+    if ((tabName === 'paths' || tabName === 'demons') && window.pywebview) {
+        window.pywebview.api.api_get_system_status().then(res => {
+            const s = JSON.parse(res);
+            const vaultEl = document.getElementById('status-vault-path');
+            const portEl = document.getElementById('status-orange-port');
+            const mcpEl = document.getElementById('status-mcp');
+            if (vaultEl) vaultEl.textContent = s.obsidian_vault_path;
+            if (portEl) portEl.textContent = `:${s.orange_port}`;
+            if (mcpEl) mcpEl.textContent = s.mcp_status;
+        }).catch(err => console.error('System status error:', err));
+    }
+}
+window.switchSettingsTab = switchSettingsTab;
+
+// Фича 4: MCP Dashboard с реальными статусами
+async function openMCPDashboard() {
+    if (window.pywebview) {
+        try {
+            const res = await window.pywebview.api.api_get_mcp_status();
+            const s = JSON.parse(res);
+            const sqlEl = document.querySelector('#mcp-dashboard-modal [data-mcp="sqlite-status"]');
+            const mcpEl = document.querySelector('#mcp-dashboard-modal [data-mcp="mcp-status"]');
+            if (sqlEl) sqlEl.textContent = `${s.sqlite.status} (${s.sqlite.size_mb} MB)`;
+            if (mcpEl) mcpEl.textContent = s.mcp.status;
+        } catch(e) { console.error('MCP status error:', e); }
+    }
+    openModal('mcp-dashboard-modal');
+}
+window.openMCPDashboard = openMCPDashboard;
+
 async function saveSettings() {
     if (!window.pywebview) return;
     try {
         const tokenInput = document.getElementById('setting-auth-token');
         const tokenValue = tokenInput ? tokenInput.value : '';
+        const langToggle = document.getElementById('language-toggle');
+        const langValue = langToggle ? langToggle.value : 'en';
         
         const settings = {
             auth_token: tokenValue,
-            telemetry_stream: currentTelemetrySetting
+            telemetry_stream: currentTelemetrySetting,
+            telegram_daemon: currentTelegramDaemonSetting,
+            language: langValue
         };
         
         const resultStr = await window.pywebview.api.api_save_settings(settings);
         const result = JSON.parse(resultStr);
         if (result.status === 'success') {
             closeSettings();
-            appendMessage('Система', 'Настройки успешно сохранены.', 'sys');
+            appendMessage('System', 'Settings saved successfully.', 'sys');
         } else {
-            appendMessage('Система', `Ошибка при сохранении настроек: ${result.message}`, 'sys');
+            appendMessage('System', `Error saving settings: ${result.message}`, 'sys');
         }
     } catch (e) {
         console.error("Error saving settings: ", e);
-        appendMessage('Система', `Сбой сохранения настроек: ${e.toString()}`, 'sys');
+        appendMessage('System', `Failed to save settings: ${e.toString()}`, 'sys');
     }
 }
 
@@ -576,6 +714,21 @@ function updateTelemetrySettingsUI(state) {
     currentTelemetrySetting = state;
     const btnOn = document.getElementById('btn-telemetry-on');
     const btnOff = document.getElementById('btn-telemetry-off');
+    if (btnOn && btnOff) {
+        if (state === 'ON') {
+            btnOn.className = "px-3 py-1 bg-primary text-on-primary text-[10px] font-bold";
+            btnOff.className = "px-3 py-1 text-on-surface text-[10px]";
+        } else {
+            btnOn.className = "px-3 py-1 text-on-surface text-[10px]";
+            btnOff.className = "px-3 py-1 bg-primary text-on-primary text-[10px] font-bold";
+        }
+    }
+}
+
+function updateTelegramDaemonUI(state) {
+    currentTelegramDaemonSetting = state;
+    const btnOn = document.getElementById('btn-tgdaemon-on');
+    const btnOff = document.getElementById('btn-tgdaemon-off');
     if (btnOn && btnOff) {
         if (state === 'ON') {
             btnOn.className = "px-3 py-1 bg-primary text-on-primary text-[10px] font-bold";
@@ -619,6 +772,84 @@ function handleOverrideResponse(approved) {
     }
 }
 
+// Telemetry Log Injection (called from Python via evaluate_js)
+function addTelemetryLog(timestamp, logType, message) {
+    const sidebar = document.getElementById('telemetry-sidebar');
+    if (!sidebar) return;
+    
+    const logContainer = sidebar.querySelector('.overflow-y-auto');
+    if (!logContainer) return;
+    
+    // Determine color scheme based on log type
+    let typeColorClass, typeBorderClass, typeBgClass, textColorClass;
+    switch (logType) {
+        case 'OK':
+        case 'CONN':
+            typeColorClass = 'text-[#00FF66]';
+            typeBorderClass = 'border-[#00FF66]/20';
+            typeBgClass = 'bg-[#00FF66]/5';
+            textColorClass = 'text-white/95';
+            break;
+        case 'FAIL':
+        case 'CRITICAL':
+            typeColorClass = 'text-red-500';
+            typeBorderClass = 'border-red-500/20';
+            typeBgClass = 'bg-red-500/5';
+            textColorClass = 'text-red-200/95';
+            break;
+        case 'WARN':
+            typeColorClass = 'text-yellow-500';
+            typeBorderClass = 'border-yellow-500/20';
+            typeBgClass = 'bg-yellow-500/5';
+            textColorClass = 'text-yellow-200/95';
+            break;
+        default: // EXEC, TG, MEM, etc.
+            typeColorClass = 'text-primary';
+            typeBorderClass = 'border-primary/20';
+            typeBgClass = 'bg-primary/5';
+            textColorClass = 'text-white/95';
+            break;
+    }
+    
+    const row = document.createElement('div');
+    row.className = 'flex gap-3 telemetry-log-row items-start';
+    row.innerHTML = `
+        <span class="text-primary/50 font-mono text-[10px] pt-0.5 shrink-0">[${escapeHTML(timestamp)}]</span>
+        <span class="${typeColorClass} border ${typeBorderClass} ${typeBgClass} px-1 py-0.2 text-[9px] font-bold tracking-widest shrink-0">${escapeHTML(logType)}</span>
+        <span class="${textColorClass} flex-1 font-mono text-xs break-words">${escapeHTML(message)}</span>
+    `;
+    
+    // Insert before the last "AWAITING" row, or at the end
+    const awaitingRow = logContainer.querySelector('.animate-pulse');
+    if (awaitingRow && awaitingRow.closest('.telemetry-log-row')) {
+        logContainer.insertBefore(row, awaitingRow.closest('.telemetry-log-row'));
+    } else {
+        logContainer.appendChild(row);
+    }
+    
+    // Auto-scroll telemetry
+    logContainer.scrollTop = logContainer.scrollHeight;
+}
+
+// Фича 6: Inline Assets Execute — запуск кода из модала через агент
+async function executeCodeFromModal(code) {
+    closeModal('inline-assets-modal');
+    appendMessage('System', 'Running code in sandbox...', 'sys');
+    showLoader();
+    try {
+        const result = await window.pywebview.api.run_agent('coder',
+            `Run this code via execute_python and show the output:\n\`\`\`python\n${code}\n\`\`\``, "[]");
+        removeLoader();
+        appendMessage('Orange [Coder]', result, 'sys');
+        currentChatId = await window.pywebview.api.api_get_current_chat_id();
+        refreshChatList();
+    } catch(e) {
+        removeLoader();
+        appendMessage('Orange', `Error: ${e}`, 'sys');
+    }
+}
+window.executeCodeFromModal = executeCodeFromModal;
+
 // Exporting functions to global window context
 window.openSettings = openSettings;
 window.closeSettings = closeSettings;
@@ -627,14 +858,74 @@ window.updateTelemetrySettingsUI = updateTelemetrySettingsUI;
 window.triggerSystemPanic = triggerSystemPanic;
 window.showExecutionOverride = showExecutionOverride;
 window.handleOverrideResponse = handleOverrideResponse;
+window.addTelemetryLog = addTelemetryLog;
+window.updateTelegramDaemonUI = updateTelegramDaemonUI;
+window.exportChat = exportChat;
+window.createNewChat = createNewChat;
+window.loadChat = loadChat;
+window.uploadFile = uploadFile;
+window.setMode = setMode;
+window.toggleTelemetry = toggleTelemetry;
+
+// Localization dynamic switcher
+let i18nData = null;
+
+async function switchLanguage(lang) {
+    if (!window.pywebview) return;
+    try {
+        if (!i18nData) {
+            const i18nStr = await window.pywebview.api.api_get_i18n();
+            i18nData = JSON.parse(i18nStr);
+        }
+        const dict = i18nData[lang];
+        if (!dict) return;
+
+        // Apply text translations
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            if (dict[key]) {
+                el.innerHTML = dict[key];
+            }
+        });
+
+        // Apply placeholder translations
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+            const key = el.getAttribute('data-i18n-placeholder');
+            if (dict[key]) {
+                el.setAttribute('placeholder', dict[key]);
+            }
+        });
+
+        // Sync with backend config
+        await window.pywebview.api.set_language(lang);
+    } catch(e) {
+        console.error("Error switching language:", e);
+    }
+}
+window.switchLanguage = switchLanguage;
 
 // Initialize Application UI
-function initUI() {
+async function initUI() {
     if(!window.pywebview) {
         setTimeout(initUI, 100);
         return;
     }
     refreshChatList();
+
+    // Load settings language and apply
+    try {
+        const settingsStr = await window.pywebview.api.api_get_settings();
+        const settings = JSON.parse(settingsStr);
+        if (settings && settings.language) {
+            await switchLanguage(settings.language);
+            const langToggle = document.getElementById('language-toggle');
+            if (langToggle) {
+                langToggle.value = settings.language;
+            }
+        }
+    } catch(e) {
+        console.error("Error initializing language settings:", e);
+    }
 }
 
 // Run on page load

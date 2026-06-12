@@ -17,16 +17,18 @@ async def atomic_write_obsidian_note(target_path: str | Path, content: str) -> N
     target_path = Path(target_path)
     temp_path = target_path.with_suffix('.tmp')
 
+    from core.file_lock import safe_write_lock
     try:
-        # Асинхронно пишем во временный файл
-        async with aiofiles.open(temp_path, mode='w', encoding='utf-8') as f:
-            await f.write(content)
-            await f.flush()
-            # Принудительно сбрасываем буфер ОС на диск в отдельном потоке
-            await asyncio.to_thread(os.fsync, f.fileno())
+        async with safe_write_lock(target_path):
+            # Асинхронно пишем во временный файл
+            async with aiofiles.open(temp_path, mode='w', encoding='utf-8') as f:
+                await f.write(content)
+                await f.flush()
+                # Принудительно сбрасываем буфер ОС на диск в отдельном потоке
+                await asyncio.to_thread(os.fsync, f.fileno())
 
-        # Атомарно заменяем целевой файл
-        await asyncio.to_thread(os.replace, temp_path, target_path)
+            # Атомарно заменяем целевой файл
+            await asyncio.to_thread(os.replace, temp_path, target_path)
 
     except Exception as e:
         # Убираем временный файл при ошибках

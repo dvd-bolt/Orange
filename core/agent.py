@@ -13,8 +13,8 @@ agent = Agent(
 )
 
 # Регистрация инструментов из Rust-ядра
-agent.tool_plain(tools.scan_vault_fast)
-agent.tool_plain(tools.read_file_fast)
+agent.tool(tools.scan_vault_fast)
+agent.tool(tools.read_file_fast)
 agent.tool_plain(tools.fetch_website_fast)
 
 # Регистрация Playwright и новых инструментов
@@ -28,32 +28,35 @@ agent.tool(tools.execute_python)
 agent.tool(tools.list_existing_notes)
 
 @agent.system_prompt
+def system_prompt_vault_path(ctx: RunContext[OrangeDeps]) -> str:
+    return f"Current Obsidian Vault Root path: '{ctx.deps.obsidian_vault_path}'."
+
+@agent.system_prompt
 async def inject_mcp_tools(ctx: RunContext[OrangeDeps]) -> str:
     """
-    Динамически подгружает список доступных инструментов из MCP и 
-    добавляет их в системный промпт агента, чтобы он знал, какие инструменты может вызывать.
+    Dynamically loads the list of available tools from MCP and
+    injects them into the agent's system prompt.
     """
-    # Если MCP клиент не инициализирован (например, выключен в конфиге)
     if not ctx.deps.mcp_client or not ctx.deps.mcp_client._session:
-        return "\n\nИнструменты MCP не подключены."
+        return "\n\nMCP Tools are not connected."
 
     try:
         mcp_tools = await ctx.deps.mcp_client.get_tools()
         tools_info = []
         for t in mcp_tools:
-            tools_info.append(f"- {t.name}: {t.description} (Схема аргументов: {t.inputSchema})")
+            tools_info.append(f"- {t.name}: {t.description} (Schema: {t.inputSchema})")
         
         if tools_info:
             tools_text = "\n".join(tools_info)
             return (
-                "\n\nТЕБЕ ДОСТУПНЫ СЛЕДУЮЩИЕ ИНСТРУМЕНТЫ MCP ДЛЯ РАБОТЫ С OBSIDIAN:\n"
+                "\n\nYOU HAVE THE FOLLOWING MCP TOOLS AVAILABLE FOR OBSIDIAN:\n"
                 f"{tools_text}\n\n"
-                "Используй tool 'call_obsidian_tool', передавая в него 'tool_name' и 'arguments' (словарь), "
-                "чтобы вызывать эти инструменты и взаимодействовать с хранилищем."
+                "Use the tool 'call_obsidian_tool' passing 'tool_name' and 'arguments' (dict) "
+                "to invoke these tools and interact with the vault."
             )
-        return "\n\nДоступных инструментов MCP не найдено."
+        return "\n\nNo available MCP tools found."
     except Exception as e:
-        return f"\n\nНе удалось получить список инструментов MCP: {e}"
+        return f"\n\nFailed to retrieve MCP tools list: {e}"
 
 @agent.tool
 async def call_obsidian_tool(ctx: RunContext[OrangeDeps], tool_name: str, arguments: Dict[str, Any]) -> str:
@@ -65,12 +68,12 @@ async def call_obsidian_tool(ctx: RunContext[OrangeDeps], tool_name: str, argume
         arguments: Словарь с аргументами, которые ожидает инструмент.
     """
     if not ctx.deps.mcp_client or not ctx.deps.mcp_client._session:
-        return "Ошибка: MCP клиент не подключен."
+        return "Error: MCP client is not connected."
 
     try:
         result = await ctx.deps.mcp_client.call_tool(tool_name, arguments)
         
-        # Парсим ответ от MCP. Обычно возвращается объект, у которого есть поле content.
+        # Parse MCP response
         if hasattr(result, "content") and result.content:
             text_outputs = []
             for item in result.content:
@@ -82,4 +85,4 @@ async def call_obsidian_tool(ctx: RunContext[OrangeDeps], tool_name: str, argume
             
         return str(result)
     except Exception as e:
-        return f"Ошибка при выполнении инструмента '{tool_name}': {str(e)}"
+        return f"Error executing tool '{tool_name}': {str(e)}"
