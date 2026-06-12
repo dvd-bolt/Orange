@@ -165,5 +165,5 @@ def search_relevant_files(vault_path: str, query: str, limit: int = 5) -> List[s
             scores[filepath] = score
 
     # Sort files by relevance score descending
-    sorted_files = sorted(scores.keys(), key=lambda x: scores[x], desc=True)
+    sorted_files = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
     return sorted_files[:limit]

@@ -23,7 +23,7 @@
     "pdf_extract_all": "Извлечь все страницы",
     "pdf_specify_range": "Укажите диапазон (например, 1-10):",
     "pdf_range_placeholder": "например, 1-10",
-    "inline_assets_title": "[IN_LINE_ASSETS_&_ACTIONS]",
+    "inline_assets_title": "[ЛОКАЛЬНЫЕ_РЕСУРСЫ_И_ДЕЙСТВИЯ]",
     "code_block_actions_title": "ДЕЙСТВИЯ_С_КОДОМ",
     "btn_copy": "[ КОПИРОВАТЬ ]",
     "btn_execute": "[ ЗАПУСТИТЬ ]",
@@ -33,7 +33,8 @@
     "welcome_desc": "Добро пожаловать в <strong>Orange OS</strong>. Вычислительное ядро успешно связано с локальной базой SQLite.",
     "welcome_bullet1": "Выберите чат в боковой панели или создайте новый сеанс.",
     "welcome_bullet2": "ИИ-агент автоматически поддерживает контекст беседы.",
-    "welcome_bullet3": "Используйте инструменты экспорта для синхронизации дайджестов с Obsidian."
+    "welcome_bullet3": "Используйте инструменты экспорта для синхронизации дайджестов с Obsidian.",
+    "mcp_dashboard_title": "[ПАНЕЛЬ_УПРАВЛЕНИЯ_MCP]"
   },
   "en": {
     "settings_title": "[GLOBAL_SETTINGS]",
@@ -69,6 +70,7 @@
     "welcome_desc": "Welcome to <strong>Orange OS</strong>. The computing kernel has been successfully linked with the local SQLite memory.",
     "welcome_bullet1": "Select a chat from the sidebar or create a new session.",
     "welcome_bullet2": "The AI agent automatically maintains conversation context.",
-    "welcome_bullet3": "Use export tools to sync digests directly to Obsidian."
+    "welcome_bullet3": "Use export tools to sync digests directly to Obsidian.",
+    "mcp_dashboard_title": "[MCP_DASHBOARD]"
   }
 }

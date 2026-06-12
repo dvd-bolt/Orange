@@ -129,7 +129,7 @@ class DaemonManager:
         # Создаем заметку в test_vault
         try:
             vault_root = self.api._deps.obsidian_vault_path
-            inbox_dir = os.path.join(vault_root, "_Inbox")
+            inbox_dir = os.path.join(vault_root, "04-projects")
             os.makedirs(inbox_dir, exist_ok=True)
             
             filename = f"TG_Task_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.md"

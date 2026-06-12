@@ -912,19 +912,22 @@ async function initUI() {
     }
     refreshChatList();
 
-    // Load settings language and apply
+    // Load settings language and apply (default to Russian)
+    let lang = 'ru';
     try {
         const settingsStr = await window.pywebview.api.api_get_settings();
         const settings = JSON.parse(settingsStr);
         if (settings && settings.language) {
-            await switchLanguage(settings.language);
-            const langToggle = document.getElementById('language-toggle');
-            if (langToggle) {
-                langToggle.value = settings.language;
-            }
+            lang = settings.language;
         }
     } catch(e) {
         console.error("Error initializing language settings:", e);
+    }
+    
+    await switchLanguage(lang);
+    const langToggle = document.getElementById('language-toggle');
+    if (langToggle) {
+        langToggle.value = lang;
     }
 }
 

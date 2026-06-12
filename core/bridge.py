@@ -107,7 +107,7 @@ class BridgeAPI:
         try:
             file_types = ('Text and PDF files (*.txt;*.csv;*.md;*.pdf)', 'All files (*.*)')
             result = self._window.create_file_dialog(
-                dialog_type=webview.OPEN_DIALOG,
+                dialog_type=webview.FileDialog.OPEN,
                 allow_multiple=False,
                 file_types=file_types
             )

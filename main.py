@@ -59,16 +59,31 @@ class ObsidianQueryHandler(BaseHTTPRequestHandler):
                 
                 response_text = future.result()
                 
-                self.send_response(200)
-                self.send_header('Content-Type', 'text/markdown; charset=utf-8')
-                self.end_headers()
-                self.wfile.write(response_text.encode('utf-8'))
+                accept_header = self.headers.get('Accept', '')
+                if 'application/json' in accept_header:
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json; charset=utf-8')
+                    self.end_headers()
+                    response_data = {"answer": response_text}
+                    self.wfile.write(json.dumps(response_data).encode('utf-8'))
+                else:
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/markdown; charset=utf-8')
+                    self.end_headers()
+                    self.wfile.write(response_text.encode('utf-8'))
                 
             except Exception as e:
                 self.send_response(500)
-                self.send_header('Content-Type', 'text/plain; charset=utf-8')
-                self.end_headers()
-                self.wfile.write(f"Error: {str(e)}".encode('utf-8'))
+                accept_header = self.headers.get('Accept', '')
+                if 'application/json' in accept_header:
+                    self.send_header('Content-Type', 'application/json; charset=utf-8')
+                    self.end_headers()
+                    err_data = {"error": str(e), "message": str(e)}
+                    self.wfile.write(json.dumps(err_data).encode('utf-8'))
+                else:
+                    self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                    self.end_headers()
+                    self.wfile.write(f"Error: {str(e)}".encode('utf-8'))
         else:
             self.send_response(404)
             self.end_headers()
@@ -102,7 +117,8 @@ def main():
     class NonReusableHTTPServer(ThreadingHTTPServer):
         allow_reuse_address = False
 
-    for port in range(settings.orange_port, settings.orange_port + 11):
+    start_port = 8080
+    for port in range(start_port, start_port + 11):
         try:
             server = NonReusableHTTPServer(('127.0.0.1', port), ObsidianQueryHandler)
             bound_port = port

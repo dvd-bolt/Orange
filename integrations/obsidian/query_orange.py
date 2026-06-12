@@ -70,16 +70,18 @@ def main():
     parser.add_argument("--title", "-t", help="Title of the active Obsidian note")
     parser.add_argument("--path", "-p", "--file", "-f", dest="path", help="Path to the active Obsidian note file on disk")
     parser.add_argument("--content", "-c", help="Direct text content of the note (optional)")
-    parser.add_argument("--query", "-q", required=True, help="Query / question for the Pydantic AI agent")
-    parser.add_argument("--url", default="http://127.0.0.1:8000", help="Orange server URL (default: http://127.0.0.1:8000)")
+    parser.add_argument("--query", "-q", required=False, help="Query / question for the Pydantic AI agent")
+    parser.add_argument("--url", default="http://127.0.0.1:8080", help="Orange server URL (default: http://127.0.0.1:8080)")
     
     args = parser.parse_args()
+    
+    query_text = args.query if args.query else "PING_ORANGE"
     
     response = query_orange(
         note_title=args.title,
         note_path=args.path,
         content=args.content,
-        query_text=args.query,
+        query_text=query_text,
         server_url=args.url
     )
     

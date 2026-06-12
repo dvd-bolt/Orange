@@ -281,7 +281,8 @@ async def export_active_chat(chat_id: str, deps) -> str:
     
     filename = f"Export_{uuid.uuid4().hex[:8]}.md"
     obsidian_root = deps.obsidian_vault_path
-    target_path = os.path.join(obsidian_root, "_Inbox", filename)
+    target_path = os.path.join(obsidian_root, "04-projects", filename)
+    os.makedirs(os.path.dirname(target_path), exist_ok=True)
     
     await atomic_write_obsidian_note(target_path, markdown_result)
     return f"Успех! Чат экспортирован в {target_path}"
@@ -434,6 +435,9 @@ async def execute_python(ctx: RunContext[OrangeDeps], code: str) -> str:
             stderr = stderr_bytes.decode('utf-8', errors='replace')
             exit_code = process.returncode
             
+            if exit_code != 0:
+                raise subprocess.CalledProcessError(exit_code, sys.executable, output=stdout, stderr=stderr)
+            
             output_lines = [
                 f"=== РЕЗУЛЬТАТ ВЫПОЛНЕНИЯ (Код возврата: {exit_code}) ==="
             ]
@@ -445,6 +449,15 @@ async def execute_python(ctx: RunContext[OrangeDeps], code: str) -> str:
                 output_lines.append("[Процесс завершился без вывода]")
                 
             return "\n\n".join(output_lines)
+            
+        except subprocess.CalledProcessError as cpe:
+            err_msg = (
+                f"Ошибка выполнения скрипта (Код возврата: {cpe.returncode})\n"
+                f"[STDERR]\n{cpe.stderr or 'Нет вывода'}\n"
+                f"[STDOUT]\n{cpe.output or 'Нет вывода'}"
+            )
+            print(f"[execute_python] CalledProcessError:\n{err_msg}")
+            return err_msg
             
         except asyncio.TimeoutError:
             try:
