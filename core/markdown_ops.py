@@ -134,10 +134,21 @@ async def search_notes_cli(query: str) -> List[str]:
     """
     try:
         output = await run_obsidian_cli(["search", f"query={query}", "format=json"])
-        paths = json.loads(output.strip())
-        if isinstance(paths, list):
-            return paths
-        return []
+        cleaned = output.strip()
+        if not cleaned:
+            return []
+        
+        # Try parsing as JSON list first
+        try:
+            paths = json.loads(cleaned)
+            if isinstance(paths, list):
+                return paths
+        except json.JSONDecodeError:
+            pass
+            
+        # Fallback: parse as line-by-line relative path listings
+        paths = [line.strip() for line in cleaned.splitlines() if line.strip()]
+        return paths
     except Exception as e:
         print(f"[Obsidian CLI Search Error] {e}")
         return []
