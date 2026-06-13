@@ -52,11 +52,16 @@ def scan_vault_fast(ctx: RunContext[OrangeDeps], path: str) -> str:
     except Exception as e:
         return f"Ошибка: {str(e)}"
 
-def read_file_fast(ctx: RunContext[OrangeDeps], file_path: str) -> str:
-    """Быстрое чтение содержимого файла с диска."""
+async def read_file_fast(ctx: RunContext[OrangeDeps], file_path: str) -> str:
+    """Чтение содержимого файла через интерфейс Obsidian CLI."""
     try:
-        valid_path = validate_path(ctx.deps.obsidian_vault_path, file_path)
-        return orange_core.read_file_fast(valid_path)
+        obsidian_root = ctx.deps.obsidian_vault_path
+        valid_path = validate_path(obsidian_root, file_path)
+        rel_path = os.path.relpath(valid_path, obsidian_root)
+        rel_path = rel_path.replace('\\', '/')
+        
+        from core.markdown_ops import read_note_cli
+        return await read_note_cli(rel_path)
     except Exception as e:
         return f"Ошибка: {str(e)}"
 
@@ -422,9 +427,13 @@ async def execute_python(ctx: RunContext[OrangeDeps], code: str) -> str:
             temp_file.write(code)
             temp_path = temp_file.name
             
+        # Translate backslashes to forward slashes in arguments on-the-fly to prevent Git Bash/MSYS escaping bugs
+        executable_path = sys.executable.replace('\\', '/')
+        script_path = temp_path.replace('\\', '/')
+        
         # Запускаем скрипт асинхронно через текущий интерпретатор python.exe
         process = await asyncio.create_subprocess_exec(
-            sys.executable, temp_path,
+            executable_path, script_path,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
@@ -436,7 +445,7 @@ async def execute_python(ctx: RunContext[OrangeDeps], code: str) -> str:
             exit_code = process.returncode
             
             if exit_code != 0:
-                raise subprocess.CalledProcessError(exit_code, sys.executable, output=stdout, stderr=stderr)
+                raise subprocess.CalledProcessError(exit_code, executable_path, output=stdout, stderr=stderr)
             
             output_lines = [
                 f"=== РЕЗУЛЬТАТ ВЫПОЛНЕНИЯ (Код возврата: {exit_code}) ==="
@@ -467,6 +476,18 @@ async def execute_python(ctx: RunContext[OrangeDeps], code: str) -> str:
             return "Ошибка: Выполнение кода превысило таймаут в 10 секунд и было принудительно остановлено."
             
         finally:
+            # Ensure strict descriptor destruction to prevent EMFILE/EBADF
+            if process.returncode is None:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+            try:
+                if hasattr(process, '_transport') and process._transport:
+                    process._transport.close()
+            except Exception:
+                pass
+            
             # Удаляем временный файл
             if os.path.exists(temp_path):
                 os.remove(temp_path)

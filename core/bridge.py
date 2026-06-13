@@ -288,11 +288,11 @@ class BridgeAPI:
                 relevant_files = await hybrid_search(user_prompt, vault_path, api_key=api_key, limit=3)
                 if relevant_files:
                     context_chunks = []
+                    from core.markdown_ops import read_note_cli
                     for filepath in relevant_files:
                         filename = os.path.basename(filepath)
                         try:
-                            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                                file_content = f.read()
+                            file_content = await read_note_cli(filepath)
                             context_chunks.append(f"### Obsidian Note: {filename}\n{file_content}")
                             print(f"[Bridge] Injected relevant context from note: {filename}")
                         except Exception as e:
@@ -607,3 +607,33 @@ class BridgeAPI:
         if self._window:
             safe_msg = error_message.replace('\\', '\\\\').replace('`', '\\`').replace('$', '\\$')
             self._window.evaluate_js(f"triggerSystemPanic(`{safe_msg}`)")
+
+    # --- API для управления задачами через CLI ---
+
+    def api_collect_tasks(self) -> str:
+        """Сбор всех активных чекбоксов через CLI в JSON"""
+        if not hasattr(self, "_daemon_manager") or not self._daemon_manager:
+            return json.dumps({"error": "Daemon manager not initialized"})
+            
+        future = asyncio.run_coroutine_threadsafe(
+            self._daemon_manager.collect_tasks(),
+            self._background_loop
+        )
+        try:
+            return json.dumps(future.result())
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def api_toggle_task(self, path: str, line: int) -> bool:
+        """Изменение статуса задачи через CLI"""
+        if not hasattr(self, "_daemon_manager") or not self._daemon_manager:
+            return False
+            
+        future = asyncio.run_coroutine_threadsafe(
+            self._daemon_manager.toggle_task(path, line),
+            self._background_loop
+        )
+        try:
+            return future.result()
+        except Exception:
+            return False

@@ -60,11 +60,31 @@ async def draft_node(ctx: StepContext[OrangeGraphState, OrangeDeps, None]) -> Un
     
     # Select system prompt
     if ctx.state.dynamic_instruction:
-        sys_prompt = ctx.state.dynamic_instruction
+        base_sys_prompt = ctx.state.dynamic_instruction
         current_model = HEAVY_MODEL
     else:
-        sys_prompt = PROFILES.get(ctx.state.profile_name, PROFILES["base"])
+        base_sys_prompt = PROFILES.get(ctx.state.profile_name, PROFILES["base"])
         current_model = HEAVY_MODEL if ctx.state.profile_name in ["deep_research", "coder"] else LITE_MODEL
+        
+    # Slayered Context Walk-up scanning
+    from core.profiles import buildSessionContext
+    import glob
+    
+    note_title_match = re.search(r"Obsidian Note:\s*'(.*?)'", ctx.state.user_prompt)
+    current_note_path = None
+    vault_path = ctx.deps.obsidian_vault_path
+    if note_title_match:
+        note_title = note_title_match.group(1)
+        matches = glob.glob(os.path.join(vault_path, "**", f"{note_title}.md"), recursive=True)
+        if matches:
+            current_note_path = matches[0]
+            
+    walkup_context = buildSessionContext(vault_path, current_note_path)
+    
+    if walkup_context:
+        sys_prompt = f"{base_sys_prompt}\n\n=== SYSTEM DIRECTORIES CONTEXT ===\n{walkup_context}"
+    else:
+        sys_prompt = base_sys_prompt
     
     # 2. Run agent
     print(f"[FSM] Running agent on model {current_model}...")

@@ -8,6 +8,7 @@ from config.settings import get_settings
 class DaemonManager:
     def __init__(self, api):
         self.api = api
+        self.api._daemon_manager = self
         self.running = False
         self.task = None
         self.loop = api._background_loop
@@ -143,10 +144,8 @@ class DaemonManager:
                 f"- **Текст сообщения**: {text}\n"
             )
             
-            from core.file_lock import safe_write_lock
-            with safe_write_lock(filepath):
-                with open(filepath, 'w', encoding='utf-8') as f:
-                    f.write(note_content)
+            from core.file_ops import sync_atomic_write
+            sync_atomic_write(filepath, note_content)
                 
             self._log_to_telemetry("OK", f"TASK_CREATED: {filename}")
             print(f"[DaemonManager] Создана заметка: {filepath}")
@@ -169,3 +168,42 @@ class DaemonManager:
             safe_type = log_type.replace("'", "\\'")
             js_code = f"if(typeof addTelemetryLog === 'function') addTelemetryLog('{timestamp}', '{safe_type}', '{safe_msg}');"
             self.api._window.evaluate_js(js_code)
+
+    async def collect_tasks(self) -> list[dict]:
+        """
+        Собирает все активные чекбоксы хранилища с помощью CLI: obsidian tasks daily.
+        Парсит выхлоп по строкам регулярным выражением.
+        """
+        import re
+        from core.markdown_ops import run_obsidian_cli
+        try:
+            output = await run_obsidian_cli(["tasks", "daily"])
+            tasks = []
+            pattern = re.compile(r"^(.+?):(\d+):\s*-\s*\[\s*([ xX])\s*\]\s*(.+)$")
+            for line in output.splitlines():
+                match = pattern.match(line)
+                if match:
+                    path, line_num, status_char, task_text = match.groups()
+                    tasks.append({
+                        "path": path,
+                        "line": int(line_num),
+                        "completed": status_char.lower() == 'x',
+                        "text": task_text.strip()
+                    })
+            return tasks
+        except Exception as e:
+            print(f"[DaemonManager Error] Failed to collect tasks: {e}")
+            return []
+
+    async def toggle_task(self, path: str, line_num: int) -> bool:
+        """
+        Изменяет статус задачи (выполнено/не выполнено) напрямую через CLI.
+        Прямая дисковая перезапись запрещена.
+        """
+        from core.markdown_ops import run_obsidian_cli
+        try:
+            await run_obsidian_cli(["task", f"path={path}", f"line={line_num}", "toggle"])
+            return True
+        except Exception as e:
+            print(f"[DaemonManager Error] Failed to toggle task: {e}")
+            return False

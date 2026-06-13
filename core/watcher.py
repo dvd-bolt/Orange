@@ -16,16 +16,6 @@ class ObsidianWatcher(FileSystemEventHandler):
             
         file_path = event.src_path
         filename = os.path.basename(file_path)
-
-        # Update BM25 index
-        try:
-            from core.bm25 import global_bm25_indexer
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
-            global_bm25_indexer.add_document(file_path, content)
-            print(f"[Watcher] Updated BM25 index for: {filename}")
-        except Exception as e:
-            print(f"[Watcher Error] Failed to update BM25 index for modified file: {e}")
             
         current_time = time.time()
         
@@ -46,29 +36,7 @@ class ObsidianWatcher(FileSystemEventHandler):
         self.api.push_background_task("project_manager", file_path)
 
     def on_created(self, event):
-        if event.is_directory or not event.src_path.endswith('.md'):
-            return
-        file_path = event.src_path
-        filename = os.path.basename(file_path)
-        try:
-            from core.bm25 import global_bm25_indexer
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
-            global_bm25_indexer.add_document(file_path, content)
-            print(f"[Watcher] Added new note to BM25 index: {filename}")
-        except Exception as e:
-            print(f"[Watcher Error] Failed to index created file: {e}")
+        pass
 
     def on_deleted(self, event):
-        if event.is_directory or not event.src_path.endswith('.md'):
-            return
-        file_path = event.src_path
-        filename = os.path.basename(file_path)
-        try:
-            from core.bm25 import global_bm25_indexer
-            from core import db
-            global_bm25_indexer.remove_document(file_path)
-            db.delete_note_embedding(file_path)
-            print(f"[Watcher] Removed deleted note from BM25 and vector cache: {filename}")
-        except Exception as e:
-            print(f"[Watcher Error] Failed to handle note deletion index cleanup: {e}")
+        pass

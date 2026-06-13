@@ -110,6 +110,9 @@ class ObsidianQueryHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
 def main():
+    import sys
+    sys.stdout = sys.stderr
+
     # Запускаем фоновый цикл событий
     threading.Thread(target=start_background_loop, args=(background_loop,), daemon=True).start()
 
@@ -124,9 +127,9 @@ def main():
     # Инициализация Watchdog для папки Obsidian
     vault_root = os.path.abspath(settings.obsidian_vault_path)
     
-    # Инициализация поискового индекса BM25
-    from core.bm25 import global_bm25_indexer
-    global_bm25_indexer.index_vault(vault_root)
+    # Инициализация поискового индекса BM25 (Deprecated)
+    # from core.bm25 import global_bm25_indexer
+    # global_bm25_indexer.index_vault(vault_root)
     
     deps = OrangeDeps(settings=settings, mcp_client=mcp_client, obsidian_vault_path=vault_root)
     api = BridgeAPI(background_loop, deps)

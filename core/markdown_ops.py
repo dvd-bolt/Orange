@@ -69,101 +69,85 @@ def append_task_to_markdown(markdown_text: str, task_text: str) -> str:
         
     return "\n".join(lines)
 
-# --- Фича: BM25/Ключевой поиск по Obsidian Vault ---
-import os
-import re
-import math
-from typing import List, Dict, Tuple
+import asyncio
+import subprocess
+import json
+from typing import List
 
-def tokenize(text: str) -> List[str]:
-    """Simple lowercase word tokenizer"""
-    return re.findall(r'\w+', text.lower())
+_obsidian_cli_lock = asyncio.Lock()
 
-def search_relevant_files(vault_path: str, query: str, limit: int = 5) -> List[str]:
-    """
-    Performs BM25 keyword search over all markdown files in vault_path.
-    Returns absolute paths of the most relevant markdown files.
-    """
-    if not vault_path or not os.path.exists(vault_path):
-        return []
-
-    # 1. Collect all markdown files, skipping hidden directories
-    md_files = []
-    for root, dirs, files in os.walk(vault_path):
-        # Ignore dot folders (e.g. .obsidian, .orange)
-        dirs[:] = [d for d in dirs if not d.startswith('.')]
-        for f in files:
-            if f.lower().endswith('.md'):
-                md_files.append(os.path.join(root, f))
-
-    if not md_files:
-        return []
-
-    # 2. Build frequency statistics
-    doc_words: Dict[str, List[str]] = {}
-    doc_lengths: Dict[str, int] = {}
-    doc_term_freqs: Dict[str, Dict[str, int]] = {}
-    term_doc_count: Dict[str, int] = {}  # How many docs contain the term
-    
-    total_len = 0
-    for filepath in md_files:
+def decode_bytes(data: bytes) -> str:
+    """Safely decodes bytes to string trying utf-8, cp1251, cp866."""
+    if not data:
+        return ""
+    for enc in ['utf-8', 'cp1251', 'cp866']:
         try:
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                text = f.read()
-            words = tokenize(text)
-            doc_words[filepath] = words
-            doc_lengths[filepath] = len(words)
-            total_len += len(words)
-            
-            # Term frequencies
-            tf: Dict[str, int] = {}
-            for w in words:
-                tf[w] = tf.get(w, 0) + 1
-            doc_term_freqs[filepath] = tf
-            
-            # Document frequency
-            for w in tf:
-                term_doc_count[w] = term_doc_count.get(w, 0) + 1
-        except Exception as e:
-            print(f"[Indexer] Error reading file {filepath} for index: {e}")
-
-    N = len(doc_words)
-    if N == 0:
-        return []
-        
-    avg_doc_len = total_len / N
-    query_terms = tokenize(query)
-    
-    # BM25 Parameters
-    k1 = 1.5
-    b = 0.75
-    
-    scores: Dict[str, float] = {}
-    for filepath in md_files:
-        if filepath not in doc_term_freqs:
+            return data.decode(enc)
+        except UnicodeDecodeError:
             continue
-            
-        score = 0.0
-        doc_len = doc_lengths[filepath]
-        tf = doc_term_freqs[filepath]
-        
-        for term in query_terms:
-            if term not in tf:
-                continue
-                
-            # Compute IDF
-            n_doc = term_doc_count.get(term, 0)
-            idf = math.log((N - n_doc + 0.5) / (n_doc + 0.5) + 1.0)
-            
-            # Compute BM25 term score
-            term_tf = tf[term]
-            num = term_tf * (k1 + 1.0)
-            den = term_tf + k1 * (1.0 - b + b * (doc_len / (avg_doc_len or 1.0)))
-            score += idf * (num / den)
-            
-        if score > 0.0:
-            scores[filepath] = score
+    return data.decode('utf-8', errors='replace')
 
-    # Sort files by relevance score descending
-    sorted_files = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
-    return sorted_files[:limit]
+async def run_obsidian_cli(args: List[str]) -> str:
+    """Runs obsidian CLI command with Anti-Wedge Delay protection."""
+    async with _obsidian_cli_lock:
+        try:
+            cmd = ["obsidian"] + args
+            cmd = [arg.replace("\\", "/") for arg in cmd]
+            
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+            
+            # Anti-Wedge Delay: 60ms
+            await asyncio.sleep(0.06)
+            
+            if proc.returncode != 0:
+                err_msg = decode_bytes(stderr).strip()
+                raise RuntimeError(f"Obsidian CLI failed: {err_msg}")
+                
+            return decode_bytes(stdout)
+        except Exception as e:
+            try:
+                cmd_args = [arg.replace("\\", "/") for arg in (["obsidian"] + args)]
+                cmd_str = " ".join([f'"{arg}"' for arg in cmd_args])
+                proc = await asyncio.create_subprocess_shell(
+                    cmd_str,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await proc.communicate()
+                await asyncio.sleep(0.06)
+                if proc.returncode != 0:
+                    err_msg = decode_bytes(stderr).strip()
+                    raise RuntimeError(f"Obsidian CLI failed: {err_msg}")
+                return decode_bytes(stdout)
+            except Exception as ex:
+                raise RuntimeError(f"Failed to run obsidian CLI: {ex}")
+
+async def search_notes_cli(query: str) -> List[str]:
+    """
+    Search notes using Obsidian CLI: obsidian search query="{query}" format=json
+    Returns a list of note paths.
+    """
+    try:
+        output = await run_obsidian_cli(["search", f"query={query}", "format=json"])
+        paths = json.loads(output.strip())
+        if isinstance(paths, list):
+            return paths
+        return []
+    except Exception as e:
+        print(f"[Obsidian CLI Search Error] {e}")
+        return []
+
+async def read_note_cli(path: str) -> str:
+    """
+    Read note using Obsidian CLI: obsidian read path="{path}"
+    """
+    try:
+        output = await run_obsidian_cli(["read", f"path={path}"])
+        return output
+    except Exception as e:
+        return f"Error reading note via Obsidian CLI: {str(e)}"

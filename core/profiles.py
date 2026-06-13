@@ -43,3 +43,67 @@ PROFILES = {
         "Any text response without a tool call is a critical system failure."
     )
 }
+
+import os
+
+def buildSessionContext(vault_path: str, current_note_path: str = None) -> str:
+    """
+    Выполняет Walk-up сканирование каталогов от текущей заметки до корня хранилища.
+    Собирает контент локальных файлов SYSTEM.md и инструкций папок.
+    В самом конце принудительно дописывает глобальный файл защиты test_vault/APPEND_SYSTEM.md.
+    """
+    vault_path = os.path.abspath(vault_path)
+    
+    # 1. Определение начального пути сканирования
+    start_dir = vault_path
+    if current_note_path:
+        if not os.path.isabs(current_note_path):
+            abs_note_path = os.path.abspath(os.path.join(vault_path, current_note_path))
+        else:
+            abs_note_path = os.path.abspath(current_note_path)
+            
+        if os.path.isfile(abs_note_path):
+            start_dir = os.path.dirname(abs_note_path)
+        elif os.path.isdir(abs_note_path):
+            start_dir = abs_note_path
+            
+    # 2. Поднимаемся вверх по иерархии папок до корня vault_path
+    collected_systems = []
+    curr_dir = os.path.abspath(start_dir)
+    
+    while True:
+        system_file = os.path.join(curr_dir, "SYSTEM.md")
+        if os.path.isfile(system_file):
+            try:
+                with open(system_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read().strip()
+                if content:
+                    collected_systems.append(f"### Спецификация каталога {os.path.basename(curr_dir) or '/'}:\n{content}")
+            except Exception as e:
+                import sys
+                print(f"[buildSessionContext Error] Failed to read {system_file}: {e}", file=sys.stderr)
+                
+        if curr_dir == vault_path:
+            break
+            
+        parent = os.path.dirname(curr_dir)
+        if parent == curr_dir:
+            break
+        curr_dir = parent
+
+    collected_systems.reverse()
+    
+    # 3. Принудительно дописываем APPEND_SYSTEM.md
+    append_file = os.path.join(vault_path, "APPEND_SYSTEM.md")
+    if os.path.isfile(append_file):
+        try:
+            with open(append_file, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read().strip()
+            if content:
+                collected_systems.append(f"### APPEND_SYSTEM (Глобальные правила защиты):\n{content}")
+        except Exception as e:
+            import sys
+            print(f"[buildSessionContext Error] Failed to read {append_file}: {e}", file=sys.stderr)
+            
+    return "\n\n".join(collected_systems)
+
