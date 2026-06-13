@@ -201,23 +201,9 @@ function closePanic() {
 // Set mode (Auto, Base, Deep Research, Coder)
 function setMode(mode) {
     currentMode = mode;
-    document.querySelectorAll('.mode-btn').forEach(btn => {
-        btn.classList.remove('bg-primary', 'text-on-primary-container');
-        btn.classList.add('text-on-background', 'hover:text-primary', 'hover:border-primary');
-        if (btn.id === 'mode-coder') {
-            btn.className = "mode-btn font-label-caps text-label-caps text-on-background hover:text-primary hover:border-primary border border-transparent px-4 py-2 transition-colors relative hover:z-10 hover:ring-1 hover:ring-primary hover:bg-transparent";
-        } else {
-            btn.className = "mode-btn font-label-caps text-label-caps text-on-background hover:text-primary hover:border-primary border border-transparent border-r-outline px-4 py-2 transition-colors relative hover:z-10 hover:ring-1 hover:ring-primary hover:bg-transparent";
-        }
-    });
-    
-    const activeBtn = document.getElementById('mode-' + mode);
-    if (activeBtn) {
-        if (mode === 'coder') {
-            activeBtn.className = "mode-btn font-label-caps text-label-caps bg-primary text-on-primary-container px-4 py-2 relative z-10";
-        } else {
-            activeBtn.className = "mode-btn font-label-caps text-label-caps bg-primary text-on-primary-container px-4 py-2 border-r border-outline relative z-10";
-        }
+    const selectEl = document.getElementById('mode-select');
+    if (selectEl) {
+        selectEl.value = mode;
     }
 }
 

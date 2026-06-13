@@ -101,11 +101,14 @@
                 </button>
 
                 <!-- Mode Selector -->
-                <div class="flex border border-outline" id="mode-selector">
-                    <button onclick="setMode('auto')" id="mode-auto" class="mode-btn font-label-caps text-label-caps bg-primary text-on-primary-container px-4 py-2 border-r border-outline relative z-10">AUTO</button>
-                    <button onclick="setMode('base')" id="mode-base" class="mode-btn font-label-caps text-label-caps text-on-background hover:text-primary hover:border-primary border border-transparent border-r-outline px-4 py-2 transition-colors relative hover:z-10 hover:ring-1 hover:ring-primary hover:bg-transparent">BASE</button>
-                    <button onclick="setMode('deep_research')" id="mode-deep_research" class="mode-btn font-label-caps text-label-caps text-on-background hover:text-primary hover:border-primary border border-transparent border-r-outline px-4 py-2 transition-colors relative hover:z-10 hover:ring-1 hover:ring-primary hover:bg-transparent">DEEP RESEARCH</button>
-                    <button onclick="setMode('coder')" id="mode-coder" class="mode-btn font-label-caps text-label-caps text-on-background hover:text-primary hover:border-primary border border-transparent px-4 py-2 transition-colors relative hover:z-10 hover:ring-1 hover:ring-primary hover:bg-transparent">CODER</button>
+                <div class="flex items-center gap-2" id="mode-selector">
+                    <span class="font-label-caps text-[10px] text-on-surface-variant uppercase tracking-wider">MODE:</span>
+                    <select id="mode-select" onchange="setMode(this.value)" class="bg-background border border-outline text-label-caps font-label-caps text-primary px-3 py-1.5 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all cursor-pointer">
+                        <option value="auto" class="bg-background text-on-background">AUTO</option>
+                        <option value="base" class="bg-background text-on-background">BASE</option>
+                        <option value="deep_research" class="bg-background text-on-background">DEEP RESEARCH</option>
+                        <option value="coder" class="bg-background text-on-background">CODER</option>
+                    </select>
                 </div>
 
                 <div class="flex items-center gap-3">
