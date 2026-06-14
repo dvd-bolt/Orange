@@ -74,12 +74,12 @@ tailwind.config = {
                 "body-sm": ["JetBrains Mono"]
             },
             "fontSize": {
-                "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "400" }],
-                "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.15em", "fontWeight": "800" }],
-                "label-mono": ["11px", { "lineHeight": "14px", "letterSpacing": "0.05em", "fontWeight": "500" }],
-                "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
-                "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
-                "body-sm": ["14px", { "lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400" }]
+                "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0px", "fontWeight": "400" }],
+                "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0px", "fontWeight": "800" }],
+                "label-mono": ["11px", { "lineHeight": "14px", "letterSpacing": "0px", "fontWeight": "500" }],
+                "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "0px", "fontWeight": "700" }],
+                "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "0px", "fontWeight": "700" }],
+                "body-sm": ["14px", { "lineHeight": "20px", "letterSpacing": "0px", "fontWeight": "400" }]
             }
         },
     },
@@ -98,11 +98,17 @@ const inputEl = document.getElementById('user-input');
 const container = document.getElementById('chat-canvas');
 const sendBtn = document.getElementById('send-btn');
 
-// Input Textarea Autofit & Key Listener
 if (inputEl) {
     inputEl.addEventListener('input', function() {
         this.style.height = 'auto';
-        this.style.height = (this.scrollHeight) + 'px';
+        const maxHeight = 200;
+        if (this.scrollHeight > maxHeight) {
+            this.style.height = maxHeight + 'px';
+            this.style.overflowY = 'auto';
+        } else {
+            this.style.height = this.scrollHeight + 'px';
+            this.style.overflowY = 'hidden';
+        }
     });
     inputEl.addEventListener('keypress', function (e) {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -570,6 +576,7 @@ async function sendToAgent() {
     
     inputEl.value = '';
     inputEl.style.height = '48px';
+    inputEl.style.overflowY = 'hidden';
     
     if (sendBtn) {
         sendBtn.disabled = true;

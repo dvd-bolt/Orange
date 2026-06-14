@@ -366,7 +366,7 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
 
     <!-- 3. EXECUTION_OVERRIDE Modal -->
     <div id="execution-override-modal" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
-        <div class="w-full max-w-lg border border-primary p-6 bg-surface flex flex-col gap-4 relative">
+        <div class="w-full max-w-lg border border-primary p-6 bg-surface flex flex-col gap-4 relative max-h-[90vh]">
             <div class="flex justify-between items-center border-b border-outline-variant pb-2">
                 <div class="flex items-center gap-2 text-primary">
                     <span class="material-symbols-outlined font-bold">priority_high</span>
@@ -374,7 +374,7 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
                 </div>
                 <button onclick="closeModal('execution-override-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
             </div>
-            <div id="execution-command-container" class="bg-[#0A0A0A] border border-outline-variant p-3 font-label-mono text-[10px] overflow-x-auto whitespace-pre-wrap break-all text-error leading-relaxed">
+            <div id="execution-command-container" class="bg-[#0A0A0A] border border-outline-variant p-3 font-label-mono text-[10px] overflow-x-auto overflow-y-auto max-h-[50vh] whitespace-pre-wrap break-all text-error leading-relaxed">
                 <!-- Command will be inserted here -->
             </div>
             <div class="flex gap-2">

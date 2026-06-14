@@ -16,6 +16,15 @@ from core.mcp_client import ObsidianMCPClient
 from core.bridge import BridgeAPI
 from core.watcher import ObsidianWatcher
 
+# Импорт PyQt6 модулей для конфигурации
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import QApplication
+
+# Принудительное включение сглаживания на уровне операционной системы
+import os
+os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+
+
 # --- АСИНХРОННЫЙ ФОНОВЫЙ ЦИКЛ ---
 background_loop = asyncio.new_event_loop()
 
@@ -113,6 +122,16 @@ def main():
     import sys
     sys.stdout = sys.stderr
 
+    # Инициализация QApplication для настройки системного сглаживания
+    app = QApplication.instance()
+    if not app:
+        app = QApplication(sys.argv)
+
+    # Настройка QFont и принудительное включение сглаживания и хинтинга
+    font = QFont("IBM Plex Mono")
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.PreferQuality)
+    app.setFont(font)
+
     # Запускаем фоновый цикл событий
     threading.Thread(target=start_background_loop, args=(background_loop,), daemon=True).start()
 
@@ -191,7 +210,7 @@ def main():
     daemon_manager = DaemonManager(api)
     daemon_manager.start()
     
-    webview.start()
+    webview.start(gui='qt')
     
     # Корректное завершение работы фоновых процессов при закрытии окна
     daemon_manager.stop()
