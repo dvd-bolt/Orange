@@ -303,6 +303,28 @@ function removeAttachment(index) {
 
 window.removeAttachment = removeAttachment;
 
+// Copy Text Helper
+async function copyTextToClipboard(text) {
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+        } else {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+        }
+        return true;
+    } catch (err) {
+        console.error('Failed to copy text: ', err);
+        return false;
+    }
+}
+
 // Append Chat Message
 function appendMessage(sender, text, type = 'sys') {
     if (!container) return;
@@ -314,16 +336,32 @@ function appendMessage(sender, text, type = 'sys') {
             wrapper.className = "font-label-mono text-label-mono text-primary flex items-center gap-2 max-w-4xl self-center w-full justify-center opacity-80";
             wrapper.innerHTML = `<span class="material-symbols-outlined text-[14px]">info</span><span>System: ${text}</span>`;
         } else {
-            wrapper.className = "border border-primary p-4 max-w-4xl self-start w-full bg-primary bg-opacity-[0.02]";
+            wrapper.className = "border border-primary p-4 max-w-4xl self-start w-full bg-primary bg-opacity-[0.02] relative group/msg";
             wrapper.innerHTML = `
-                <div class="font-label-caps text-label-caps text-primary mb-4 uppercase border-b border-outline pb-2 flex items-center gap-2">
-                    <span class="w-2 h-2 bg-primary"></span>
-                    AGENT_RESPONSE
+                <div class="font-label-caps text-label-caps text-primary mb-4 uppercase border-b border-outline pb-2 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 bg-primary"></span>
+                        AGENT_RESPONSE
+                    </div>
+                    <button class="msg-copy-btn hover:text-white text-[10px] font-label-mono cursor-pointer border border-outline px-2 py-0.5 hover:border-primary transition-all bg-transparent text-primary opacity-0 group-hover/msg:opacity-100">[ COPY ]</button>
                 </div>
                 <div class="font-body-lg text-body-lg text-on-background space-y-4 markdown-body">
                     ${marked.parse(text)}
                 </div>
             `;
+            
+            const msgCopyBtn = wrapper.querySelector('.msg-copy-btn');
+            if (msgCopyBtn) {
+                msgCopyBtn.onclick = async () => {
+                    const ok = await copyTextToClipboard(text);
+                    if (ok) {
+                        msgCopyBtn.innerText = "[ COPIED ]";
+                        setTimeout(() => {
+                            msgCopyBtn.innerText = "[ COPY ]";
+                        }, 2000);
+                    }
+                };
+            }
             
             // Inject Copy Buttons into pre elements
             const preElements = wrapper.querySelectorAll('pre');
@@ -334,29 +372,16 @@ function appendMessage(sender, text, type = 'sys') {
                 const codeText = codeEl ? codeEl.innerText : pre.innerText;
                 
                 const copyBtn = document.createElement('button');
-                copyBtn.className = "absolute top-2 right-2 px-2 py-1 bg-[#000000] border border-outline hover:border-primary text-primary font-label-mono text-[10px] opacity-0 group-hover:opacity-100 transition-opacity duration-150 rounded-none z-10 cursor-pointer hover:bg-primary hover:text-on-primary-container";
+                copyBtn.className = "absolute top-2 right-2 bg-[#000000] border border-outline hover:border-primary text-primary font-label-mono text-[10px] opacity-0 group-hover:opacity-100 transition-opacity duration-150 rounded-none z-10 cursor-pointer hover:bg-primary hover:text-on-primary-container px-2 py-1";
                 copyBtn.innerText = "[ COPY ]";
                 
                 copyBtn.onclick = async () => {
-                    try {
-                        if (navigator.clipboard && navigator.clipboard.writeText) {
-                            await navigator.clipboard.writeText(codeText);
-                        } else {
-                            const textArea = document.createElement("textarea");
-                            textArea.value = codeText;
-                            textArea.style.position = "fixed";
-                            document.body.appendChild(textArea);
-                            textArea.focus();
-                            textArea.select();
-                            document.execCommand('copy');
-                            document.body.removeChild(textArea);
-                        }
+                    const ok = await copyTextToClipboard(codeText);
+                    if (ok) {
                         copyBtn.innerText = "[ COPIED ]";
                         setTimeout(() => {
                             copyBtn.innerText = "[ COPY ]";
                         }, 2000);
-                    } catch (err) {
-                        console.error('Failed to copy text: ', err);
                     }
                 };
                 
@@ -365,13 +390,29 @@ function appendMessage(sender, text, type = 'sys') {
         }
     } else {
         // User message style
-        wrapper.className = "border border-on-background p-4 max-w-4xl self-end w-full";
+        wrapper.className = "border border-on-background p-4 max-w-4xl self-end w-full relative group/msg";
         wrapper.innerHTML = `
-            <div class="font-label-caps text-label-caps text-on-background mb-4 uppercase border-b border-outline pb-2 inline-block">USER_DIRECTIVE</div>
+            <div class="font-label-caps text-label-caps text-on-background mb-4 uppercase border-b border-outline pb-2 flex items-center justify-between">
+                <div class="inline-block">USER_DIRECTIVE</div>
+                <button class="msg-copy-btn hover:text-white text-[10px] font-label-mono cursor-pointer border border-outline px-2 py-0.5 hover:border-primary transition-all bg-transparent text-on-background opacity-0 group-hover/msg:opacity-100">[ COPY ]</button>
+            </div>
             <div class="font-body-lg text-body-lg text-on-background">
                 ${escapeHTML(text)}
             </div>
         `;
+        
+        const msgCopyBtn = wrapper.querySelector('.msg-copy-btn');
+        if (msgCopyBtn) {
+            msgCopyBtn.onclick = async () => {
+                const ok = await copyTextToClipboard(text);
+                if (ok) {
+                    msgCopyBtn.innerText = "[ COPIED ]";
+                    setTimeout(() => {
+                        msgCopyBtn.innerText = "[ COPY ]";
+                    }, 2000);
+                }
+            };
+        }
     }
     
     container.appendChild(wrapper);

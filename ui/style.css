@@ -205,3 +205,18 @@ input:focus, textarea:focus {
 .telemetry-log-row:hover {
     background-color: rgba(255, 102, 0, 0.02);
 }
+
+/* Enable text selection for chat content and code, but disable it on interactive controls */
+body, .markdown-body, p, span, code, pre, h1, h2, h3, li, textarea, input {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    -moz-user-select: text !important;
+    -ms-user-select: text !important;
+}
+
+button, nav, select, .material-symbols-outlined {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    -ms-user-select: none !important;
+}
