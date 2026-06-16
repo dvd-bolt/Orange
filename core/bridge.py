@@ -24,9 +24,38 @@ def settings_error_handler(func):
             return json.dumps({"status": "error", "message": str(e)})
     return wrapper
 
+import datetime
+
+active_bridge_instance = None
+
+def log_to_telemetry(log_type: str, message: str):
+    """
+    Отправляет лог в боковую панель телеметрии в UI
+    """
+    global active_bridge_instance
+    if active_bridge_instance and active_bridge_instance._window:
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        # Санитизация для JS
+        safe_msg = (message
+            .replace('\\', '\\\\')
+            .replace("'", "\\'")
+            .replace('"', '\\"')
+            .replace('\n', '\\n')
+            .replace('\r', '\\r')
+            .replace('`', '\\`')
+            .replace('$', '\\$'))
+        safe_type = log_type.replace("'", "\\'")
+        js_code = f"if(typeof addTelemetryLog === 'function') addTelemetryLog('{timestamp}', '{safe_type}', '{safe_msg}');"
+        try:
+            active_bridge_instance._window.evaluate_js(js_code)
+        except Exception:
+            pass
+
 class BridgeAPI:
     """Класс-мост, функции которого будут доступны внутри JavaScript окна программы"""
     def __init__(self, background_loop: asyncio.AbstractEventLoop, deps: OrangeDeps):
+        global active_bridge_instance
+        active_bridge_instance = self
         self._window = None
         self._background_loop = background_loop
         self._deps = deps

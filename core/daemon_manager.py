@@ -154,20 +154,8 @@ class DaemonManager:
             self._log_to_telemetry("FAIL", f"FILE_WRITE_ERR: {str(e)}")
 
     def _log_to_telemetry(self, log_type, message):
-        if self.api._window:
-            timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-            # Полная санитизация для JS-строки в одинарных кавычках
-            safe_msg = (message
-                .replace('\\', '\\\\')
-                .replace("'", "\\'")
-                .replace('"', '\\"')
-                .replace('\n', '\\n')
-                .replace('\r', '\\r')
-                .replace('`', '\\`')
-                .replace('$', '\\$'))
-            safe_type = log_type.replace("'", "\\'")
-            js_code = f"if(typeof addTelemetryLog === 'function') addTelemetryLog('{timestamp}', '{safe_type}', '{safe_msg}');"
-            self.api._window.evaluate_js(js_code)
+        from core.bridge import log_to_telemetry
+        log_to_telemetry(log_type, message)
 
     async def collect_tasks(self) -> list[dict]:
         """

@@ -984,6 +984,18 @@ async function initUI() {
     }
     refreshChatList();
 
+    // Clear mock telemetry logs
+    const sidebar = document.getElementById('telemetry-sidebar');
+    if (sidebar) {
+        const logContainer = sidebar.querySelector('.overflow-y-auto');
+        if (logContainer) {
+            logContainer.innerHTML = '';
+            // Add initial active telemetry status row
+            const timestamp = new Date().toLocaleTimeString();
+            addTelemetryLog(timestamp, 'OK', 'Kernel linked. Telemetry stream active.');
+        }
+    }
+
     // Load settings language and apply (default to Russian)
     let lang = 'ru';
     try {

@@ -86,6 +86,8 @@ async def research_node(ctx: StepContext[OrangeGraphState, OrangeDeps, None]) ->
     Routes to profile-specific nodes: deep_research, project_manager, coder, base.
     """
     print(f"[FSM] Entering Research Node... Profile: {ctx.state.profile_name}")
+    from core.bridge import log_to_telemetry
+    log_to_telemetry("EXEC", f"FSM: Entering Research Node (profile: {ctx.state.profile_name})")
     await save_graph_state(ctx.state.session_id, "research_node", ctx.state)
     
     # Profile-specific transitions
@@ -102,6 +104,8 @@ async def deep_research_node(ctx: StepContext[OrangeGraphState, OrangeDeps, None
     Deep Research Node: Gathers findings from OSINT / external research.
     """
     print("[FSM] Entering Deep Research Node...")
+    from core.bridge import log_to_telemetry
+    log_to_telemetry("EXEC", "FSM: Entering Deep Research Node")
     ctx.state.relevant_files_context += "\n[OSINT Research: Mock external web search completed]"
     await save_graph_state(ctx.state.session_id, "deep_research_node", ctx.state)
     return draft_node
@@ -112,6 +116,8 @@ async def project_manager_node(ctx: StepContext[OrangeGraphState, OrangeDeps, No
     Project Manager Node: Runs automated routing and task adding.
     """
     print("[FSM] Entering Project Manager Node...")
+    from core.bridge import log_to_telemetry
+    log_to_telemetry("EXEC", "FSM: Entering Project Manager Node")
     from core.tools import add_task
     class MockRunContext:
         def __init__(self, deps):
@@ -133,6 +139,8 @@ async def draft_node(ctx: StepContext[OrangeGraphState, OrangeDeps, None]) -> Un
     Draft Node: Invokes the Orange agent to generate/update the response.
     """
     print(f"[FSM] Entering Draft Node (attempt {ctx.state.loop_count + 1})...")
+    from core.bridge import log_to_telemetry
+    log_to_telemetry("EXEC", f"FSM: Entering Draft Node (attempt {ctx.state.loop_count + 1})")
     await save_graph_state(ctx.state.session_id, "draft_node", ctx.state)
     
     from core.agent import agent, HEAVY_MODEL, LITE_MODEL
@@ -192,6 +200,8 @@ async def draft_node(ctx: StepContext[OrangeGraphState, OrangeDeps, None]) -> Un
     
     # 2. Run agent
     print(f"[FSM] Running agent on model {current_model}...")
+    from core.bridge import log_to_telemetry
+    log_to_telemetry("EXEC", f"FSM: Running agent on model {current_model}")
     run_payload = [full_prompt] + ctx.state.attachments
     res = await agent.run(
         run_payload,
@@ -210,9 +220,11 @@ async def draft_node(ctx: StepContext[OrangeGraphState, OrangeDeps, None]) -> Un
     if code_blocks:
         ctx.state.code_to_verify = code_blocks[-1].strip() # Check the last code block
         print(f"[FSM] Found Python code block. Routing to Verify Node.")
+        log_to_telemetry("EXEC", "FSM: Found Python code block. Routing to Verify Node.")
         return verify_node
     
     print(f"[FSM] No Python code block found. Routing to Self-Review Node.")
+    log_to_telemetry("EXEC", "FSM: No Python code block. Routing to Self-Review Node.")
     return self_review_node
 
 @g.step
@@ -221,6 +233,8 @@ async def verify_node(ctx: StepContext[OrangeGraphState, OrangeDeps, None]) -> U
     Verify Node: Performs static AST validation and executes code.
     """
     print("[FSM] Entering Verify Node...")
+    from core.bridge import log_to_telemetry
+    log_to_telemetry("EXEC", "FSM: Entering Verify Node")
     await save_graph_state(ctx.state.session_id, "verify_node", ctx.state)
     
     code = ctx.state.code_to_verify
@@ -232,6 +246,8 @@ async def verify_node(ctx: StepContext[OrangeGraphState, OrangeDeps, None]) -> U
         ast.parse(code)
     except SyntaxError as se:
         print(f"[FSM Verifier Warning] Static AST check failed: {se}")
+        from core.bridge import log_to_telemetry
+        log_to_telemetry("WARN", f"AST Syntax check failed: {se}")
         ctx.state.verification_feedback = f"Ошибка синтаксиса Python (AST check):\n{se}"
         ctx.state.loop_count += 1
         if ctx.state.loop_count < 3:
@@ -246,6 +262,8 @@ async def verify_node(ctx: StepContext[OrangeGraphState, OrangeDeps, None]) -> U
     if found_banned:
         msg = f"Безопасность: Импорт библиотек {found_banned} запрещен в песочнице."
         print(f"[FSM Verifier Warning] Security violation: {msg}")
+        from core.bridge import log_to_telemetry
+        log_to_telemetry("FAIL", f"Security violation: {msg}")
         ctx.state.verification_feedback = msg
         ctx.state.loop_count += 1
         if ctx.state.loop_count < 3:
@@ -258,10 +276,13 @@ async def verify_node(ctx: StepContext[OrangeGraphState, OrangeDeps, None]) -> U
     try:
         from core.tools import execute_python
         print("[FSM] Executing python sandbox via execute_python tool...")
+        from core.bridge import log_to_telemetry
+        log_to_telemetry("EXEC", "Executing Python sandbox code")
         result = await execute_python(ctx, code)
         
         if "Ошибка выполнения скрипта" in result or "Критическая ошибка" in result:
             print("[FSM Verifier Warning] Sandbox execution failed.")
+            log_to_telemetry("FAIL", "Sandbox execution failed")
             ctx.state.verification_feedback = result
             ctx.state.loop_count += 1
             if ctx.state.loop_count < 3:
@@ -272,6 +293,7 @@ async def verify_node(ctx: StepContext[OrangeGraphState, OrangeDeps, None]) -> U
         
         # Success
         print("[FSM] Sandbox execution succeeded.")
+        log_to_telemetry("OK", "Sandbox execution succeeded")
         ctx.state.executed_code_output = result
         ctx.state.draft_response += f"\n\n### Результат выполнения кода:\n{result}"
         return self_review_node
@@ -292,6 +314,8 @@ async def self_review_node(ctx: StepContext[OrangeGraphState, OrangeDeps, None])
     Self-Review Node: Finalizes output and performs Git auto-backup.
     """
     print("[FSM] Entering Self-Review Node. Finalizing response.")
+    from core.bridge import log_to_telemetry
+    log_to_telemetry("EXEC", "FSM: Entering Self-Review Node (Finalizing)")
     ctx.state.output_text = ctx.state.draft_response
     await save_graph_state(ctx.state.session_id, "self_review_node", ctx.state)
     
@@ -300,10 +324,20 @@ async def self_review_node(ctx: StepContext[OrangeGraphState, OrangeDeps, None])
         try:
             from core.git_backup import auto_backup_vault
             print(f"[FSM] Triggering automatic Git backup for vault: {ctx.deps.obsidian_vault_path}")
+            log_to_telemetry("EXEC", f"Git backup triggered for vault: {ctx.deps.obsidian_vault_path}")
             backup_res = await auto_backup_vault(ctx.deps.obsidian_vault_path)
             print(f"[FSM] Git backup status: {backup_res}")
+            if isinstance(backup_res, dict):
+                backup_status = "OK" if backup_res.get("status") == "success" else "FAIL"
+                backup_msg = backup_res.get("message", "done")
+            else:
+                backup_res_str = str(backup_res)
+                backup_status = "OK" if "success" in backup_res_str.lower() or "ok" in backup_res_str.lower() else "FAIL"
+                backup_msg = backup_res_str
+            log_to_telemetry(backup_status, f"Git backup status: {backup_msg}")
         except Exception as e:
             print(f"[FSM Warning] Failed to run Git backup: {e}")
+            log_to_telemetry("WARN", f"Git backup failed: {e}")
             
     return End(ctx.state.output_text)
 

@@ -54,9 +54,12 @@ async def request_override(action_text: str) -> bool:
     Pops a PyQt/PySide modal dialog, blocking execution without freezing the UI loop.
     Supports a headless mode via environment variable (ORANGE_TEST_MODE) for automated tests.
     """
+    from core.bridge import log_to_telemetry
+    log_to_telemetry("WARN", f"Security Gate triggered: Awaiting override confirmation...")
     # Check headless/test mode bypass
     if os.environ.get("ORANGE_TEST_MODE") == "1":
         logger.info(f"[Security Gate Bypass] Auto-approving in test mode: {action_text}")
+        log_to_telemetry("OK", "Security Gate auto-approved in test mode")
         return True
 
     # Try importing PyQt/PySide dynamically
@@ -79,7 +82,12 @@ async def request_override(action_text: str) -> bool:
             def ask_input():
                 ans = input(f"Approve action? '{action_text}' (y/n): ")
                 return ans.strip().lower() in ['y', 'yes']
-            return await loop.run_in_executor(None, ask_input)
+            res = await loop.run_in_executor(None, ask_input)
+            if res:
+                log_to_telemetry("OK", "Override PERMITTED by user via console")
+            else:
+                log_to_telemetry("FAIL", "Override DENIED by user via console")
+            return res
         except Exception:
             return False
 
@@ -138,4 +146,8 @@ async def request_override(action_text: str) -> bool:
             dialog.exec_()
         
     await loop.run_in_executor(None, show_dialog)
+    if approved[0]:
+        log_to_telemetry("OK", "Override PERMITTED by user")
+    else:
+        log_to_telemetry("FAIL", "Override DENIED by user")
     return approved[0]
