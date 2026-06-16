@@ -16,6 +16,10 @@
 
     <!-- D3.js for Knowledge Graph -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
+
+    <!-- Drawflow Library (CDN) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/drawflow@0.0.4/dist/drawflow.min.css"/>
+    <script src="https://cdn.jsdelivr.net/npm/drawflow@0.0.4/dist/drawflow.min.js"></script>
     
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
@@ -112,6 +116,11 @@
                 </div>
 
                 <div class="flex items-center gap-3">
+                    <!-- Scenario Editor Button -->
+                    <button onclick="toggleScenarioEditor()" id="btn-scenario-editor" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-3 py-1.5 hover:border-primary" title="Scenario Editor Overlay">
+                        <span class="material-symbols-outlined text-[16px]">account_tree</span>
+                        <span>SCENARIOS</span>
+                    </button>
                     <!-- Knowledge Graph Button -->
                     <button onclick="toggleKnowledgeGraph()" id="btn-knowledge-graph" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-3 py-1.5 hover:border-primary">
                         <span class="material-symbols-outlined text-[16px]">schema</span>
@@ -161,6 +170,20 @@
                 </div>
                 <div class="flex-1 w-full bg-black/40 border border-outline relative overflow-hidden" id="graph-svg-container">
                     <!-- SVG will be appended here by D3.js -->
+                </div>
+            </div>
+
+            <!-- Scenario Editor Overlay -->
+            <div id="scenario-editor-overlay" class="hidden absolute inset-x-margin-page bottom-margin-page top-24 z-40 bg-[#000000]/95 backdrop-blur-md flex flex-col p-6 border border-outline shadow-2xl">
+                <div class="flex justify-between items-center mb-4 border-b border-outline pb-2">
+                    <h2 class="font-label-caps text-xs text-primary uppercase tracking-widest flex items-center gap-2">
+                        <span class="w-2 h-2 bg-primary"></span>
+                        SCENARIO_EDITOR_OVERLAY
+                    </h2>
+                    <button onclick="toggleScenarioEditor()" class="text-on-surface hover:text-primary material-symbols-outlined text-[20px] transition-colors">close</button>
+                </div>
+                <div class="flex-1 w-full bg-black/40 border border-outline relative overflow-hidden" id="drawflow-container">
+                    <!-- Drawflow editor will be initialized here -->
                 </div>
             </div>
 

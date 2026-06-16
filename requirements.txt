@@ -41,3 +41,6 @@ playwright
 
 # Telegram userbot daemon
 telethon
+
+# Image processing for Web UI / Browser annotations
+Pillow

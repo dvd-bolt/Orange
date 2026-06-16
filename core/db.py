@@ -51,6 +51,22 @@ def init_db():
                     last_modified REAL
                 )
             ''')
+            # Инициализация FTS5 таблицы для поиска по сообщениям
+            try:
+                conn.execute('''
+                    CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+                        content,
+                        tokenize="unicode61"
+                    )
+                ''')
+                # Перенос старых сообщений в FTS5 (ретроактивное индексирование)
+                conn.execute('''
+                    INSERT INTO messages_fts(rowid, content)
+                    SELECT id, content FROM messages
+                    WHERE id NOT IN (SELECT rowid FROM messages_fts)
+                ''')
+            except sqlite3.OperationalError as e:
+                print(f"[DB Warning] Не удалось инициализировать FTS5: {e}")
             conn.commit()
 
 # --- CRUD для чатов ---
@@ -107,6 +123,11 @@ def delete_chat(chat_id: str) -> bool:
     """Удаляет чат и все его сообщения (CASCADE через ON DELETE CASCADE)"""
     with _lock:
         with get_connection() as conn:
+            # Сначала удаляем сообщения чата из FTS5 индекса
+            conn.execute(
+                "DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE chat_id = ?)",
+                (chat_id,)
+            )
             conn.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
             conn.commit()
     return True
@@ -117,10 +138,22 @@ def add_message(chat_id: str, role: str, content: str):
     """Добавляет сообщение в чат и обновляет время чата"""
     with _lock:
         with get_connection() as conn:
-            conn.execute(
+            cursor = conn.cursor()
+            cursor.execute(
                 "INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
                 (chat_id, role, content)
             )
+            msg_id = cursor.lastrowid
+            
+            # Синхронизация с FTS5 индексом
+            try:
+                conn.execute(
+                    "INSERT INTO messages_fts(rowid, content) VALUES (?, ?)",
+                    (msg_id, content)
+                )
+            except sqlite3.OperationalError as e:
+                print(f"[DB Warning] Не удалось записать в FTS5: {e}")
+                
             conn.execute(
                 "UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (chat_id,)
@@ -137,18 +170,38 @@ def get_chat_history(chat_id: str) -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 def search_messages(query: str) -> List[Dict[str, Any]]:
-    """Поиск по сообщениям во всех чатах"""
-    search_term = f"%{query}%"
+    """Быстрый полнотекстовый поиск по сообщениям во всех чатах через FTS5 с фоллбеком на LIKE"""
+    clean_query = query.replace("'", " ").replace('"', ' ').strip()
+    if not clean_query:
+        return []
+    
+    words = [f"{w}*" for w in clean_query.split() if w]
+    match_expression = " AND ".join(words)
+    
     with get_connection() as conn:
-        cursor = conn.execute(
-            '''SELECT m.*, c.title 
-               FROM messages m 
-               JOIN chats c ON m.chat_id = c.id 
-               WHERE m.content LIKE ? 
-               ORDER BY m.timestamp DESC LIMIT 50''',
-            (search_term,)
-        )
-        return [dict(row) for row in cursor.fetchall()]
+        try:
+            cursor = conn.execute(
+                '''SELECT m.*, c.title 
+                   FROM messages m 
+                   JOIN chats c ON m.chat_id = c.id 
+                   WHERE m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?) 
+                   ORDER BY m.timestamp DESC LIMIT 50''',
+                (match_expression,)
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        except sqlite3.OperationalError as e:
+            # Фоллбек при синтаксической ошибке запроса FTS5
+            print(f"[DB Warning] Ошибка FTS5 поиска ({e}), переход на LIKE...")
+            search_term = f"%{query}%"
+            cursor = conn.execute(
+                '''SELECT m.*, c.title 
+                   FROM messages m 
+                   JOIN chats c ON m.chat_id = c.id 
+                   WHERE m.content LIKE ? 
+                   ORDER BY m.timestamp DESC LIMIT 50''',
+                (search_term,)
+            )
+            return [dict(row) for row in cursor.fetchall()]
 
 # Инициализируем БД при импорте модуля
 init_db()

@@ -107,3 +107,92 @@ def buildSessionContext(vault_path: str, current_note_path: str = None) -> str:
             
     return "\n\n".join(collected_systems)
 
+
+def buildIdentityContext(vault_path: str) -> str:
+    """
+    Загружает автономный профиль личности и памяти из папки _System/:
+    - Identity.md (SOUL/системный характер)
+    - USER.md (профиль пользователя, до 1375 символов)
+    - MEMORY.md (активные проекты/память, до 2200 символов)
+    Если папка или файлы отсутствуют, создает шаблоны по умолчанию.
+    """
+    vault_path = os.path.abspath(vault_path)
+    system_dir = os.path.join(vault_path, "_System")
+    
+    # Автосоздание папки и дефолтных шаблонов, если их нет
+    if not os.path.exists(system_dir):
+        try:
+            os.makedirs(system_dir, exist_ok=True)
+            
+            # Дефолтный Identity.md
+            with open(os.path.join(system_dir, "Identity.md"), "w", encoding="utf-8") as f:
+                f.write(
+                    "# Личность и характер ассистента Orange\n\n"
+                    "Вы — высокоэффективный локальный ИИ-ассистент Orange. Вы общаетесь кратко, по делу, "
+                    "без лишней вежливости и \"воды\". Ваша цель — экономить время пользователя и решать задачи точно.\n"
+                )
+            # Дефолтный USER.md
+            with open(os.path.join(system_dir, "USER.md"), "w", encoding="utf-8") as f:
+                f.write(
+                    "# Профиль пользователя\n\n"
+                    "Имя: Пользователь\n"
+                    "Стек технологий: Python, JavaScript, PyQt, SQLite, HTML\n"
+                    "Предпочтения: Краткие ответы, готовый рабочий код с комментариями, оформление в стиле Markdown.\n"
+                )
+            # Дефолтный MEMORY.md
+            with open(os.path.join(system_dir, "MEMORY.md"), "w", encoding="utf-8") as f:
+                f.write(
+                    "# Активная память и проекты\n\n"
+                    "Текущий проект: Обновление Orange OS до версии «Джарвис».\n"
+                    "Направления работы: Внедрение FTS5 поиска по сообщениям, кристаллизация навыков (Skill Crystallization) и точечный патчинг файлов.\n"
+                )
+            print(f"[Identity] Создана папка _System с шаблонами по умолчанию: {system_dir}")
+        except Exception as e:
+            print(f"[Identity Error] Не удалось создать шаблоны по умолчанию: {e}")
+            return ""
+            
+    identity_file = os.path.join(system_dir, "Identity.md")
+    user_file = os.path.join(system_dir, "USER.md")
+    memory_file = os.path.join(system_dir, "MEMORY.md")
+    
+    parts = []
+    
+    # 1. Identity
+    if os.path.isfile(identity_file):
+        try:
+            with open(identity_file, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read().strip()
+            if content:
+                parts.append(f"=== IDENTITY (SOUL.md) ===\n{content}")
+        except Exception:
+            pass
+            
+    # 2. USER.md
+    if os.path.isfile(user_file):
+        try:
+            with open(user_file, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read().strip()
+            if content:
+                # Limit to 1375 chars
+                user_content = content[:1375]
+                parts.append(f"=== USER PROFILE (USER.md) ===\n{user_content}")
+        except Exception:
+            pass
+            
+    # 3. MEMORY.md
+    if os.path.isfile(memory_file):
+        try:
+            with open(memory_file, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read().strip()
+            if content:
+                # Limit to 2200 chars
+                memory_content = content[:2200]
+                parts.append(f"=== PERSISTENT MEMORY (MEMORY.md) ===\n{memory_content}")
+        except Exception:
+            pass
+            
+    if parts:
+        return "\n\n" + "\n\n".join(parts) + "\n\n"
+    return ""
+
+

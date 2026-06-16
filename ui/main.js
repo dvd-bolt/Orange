@@ -93,6 +93,44 @@ let pendingAttachments = [];
 let currentTelemetrySetting = 'ON';
 let currentTelegramDaemonSetting = 'OFF';
 
+// Override/configure marked.js renderer for collapsible tool cards
+if (typeof marked !== 'undefined') {
+    const renderer = new marked.Renderer();
+    const originalCode = renderer.code.bind(renderer);
+    renderer.code = function(code, language, escaped) {
+        const isTool = (language === 'tool' || language === 'tool-log' || language === 'exec' || 
+                        (code && (code.includes('[EXEC]') || code.includes('[TOOL]'))));
+        if (isTool) {
+            return `
+                <details class="tool-card border border-outline bg-black/40 my-3 font-mono text-xs">
+                    <summary class="cursor-pointer p-3 border-b border-outline hover:bg-surface-variant flex items-center justify-between text-primary font-label-caps select-none">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined text-sm">construction</span>
+                            <span>TOOL_EXECUTION_LOG [${(language || 'EXEC').toUpperCase()}]</span>
+                        </div>
+                        <span class="details-toggle-icon font-bold text-[10px]">[ OPEN ]</span>
+                    </summary>
+                    <div class="p-3 bg-black overflow-x-auto max-w-full">
+                        <pre class="m-0 p-0 border-0 bg-transparent text-on-background"><code class="language-${language || 'text'}">${escapeHTML(code)}</code></pre>
+                    </div>
+                </details>
+            `;
+        }
+        return originalCode(code, language, escaped);
+    };
+    marked.setOptions({ renderer: renderer });
+}
+
+// Global listener for Collapsible Tool Cards toggle text update
+document.addEventListener('toggle', function(event) {
+    if (event.target.tagName === 'DETAILS' && event.target.classList.contains('tool-card')) {
+        const toggleIcon = event.target.querySelector('.details-toggle-icon');
+        if (toggleIcon) {
+            toggleIcon.textContent = event.target.open ? '[ CLOSE ]' : '[ OPEN ]';
+        }
+    }
+}, true);
+
 // DOM Elements
 const inputEl = document.getElementById('user-input');
 const container = document.getElementById('chat-canvas');
@@ -1176,4 +1214,51 @@ async function toggleVoiceRecording() {
     }
 }
 window.toggleVoiceRecording = toggleVoiceRecording;
+
+// --- SCENARIO EDITOR (DRAWFLOW) INTEGRATION ---
+let drawflowInstance = null;
+let isScenarioEditorVisible = false;
+
+function toggleScenarioEditor() {
+    const overlay = document.getElementById('scenario-editor-overlay');
+    if (!overlay) return;
+    
+    isScenarioEditorVisible = !isScenarioEditorVisible;
+    if (isScenarioEditorVisible) {
+        overlay.classList.remove('hidden');
+        if (!drawflowInstance) {
+            initDrawflow();
+        }
+    } else {
+        overlay.classList.add('hidden');
+    }
+}
+window.toggleScenarioEditor = toggleScenarioEditor;
+
+function initDrawflow() {
+    const container = document.getElementById('drawflow-container');
+    if (!container) return;
+    
+    drawflowInstance = new Drawflow(container);
+    drawflowInstance.start();
+    
+    // Add default cyberpunk demo scenario nodes to show a genuine interactive implementation
+    drawflowInstance.addNode('user_directive', 1, 1, 80, 120, 'node-user', {}, 
+        `<div class="font-label-caps text-[10px] text-primary mb-1 border-b border-outline pb-1">User Directive</div>
+         <div class="font-label-mono text-[9px] opacity-75 font-mono">Awaiting input...</div>`
+    );
+    
+    drawflowInstance.addNode('classifier', 1, 1, 320, 120, 'node-classifier', {}, 
+        `<div class="font-label-caps text-[10px] text-primary mb-1 border-b border-outline pb-1">Router Node</div>
+         <div class="font-label-mono text-[9px] opacity-75 font-mono">Classifying...</div>`
+    );
+    
+    drawflowInstance.addNode('deep_research', 1, 1, 560, 120, 'node-research', {}, 
+        `<div class="font-label-caps text-[10px] text-primary mb-1 border-b border-outline pb-1">Research Node</div>
+         <div class="font-label-mono text-[9px] opacity-75 font-mono">Executing OSINT...</div>`
+    );
+    
+    drawflowInstance.addConnection(1, 2, 'output_1', 'input_1');
+    drawflowInstance.addConnection(2, 3, 'output_1', 'input_1');
+}
 

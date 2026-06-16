@@ -292,7 +292,7 @@ class BridgeAPI:
                     for filepath in relevant_files:
                         filename = os.path.basename(filepath)
                         try:
-                            file_content = await read_note_cli(filepath)
+                            file_content = await read_note_cli(filepath, vault_path=vault_path)
                             context_chunks.append(f"### Obsidian Note: {filename}\n{file_content}")
                             print(f"[Bridge] Injected relevant context from note: {filename}")
                         except Exception as e:
@@ -385,6 +385,12 @@ class BridgeAPI:
         
         # Запись ответа агента
         db.add_message(self.current_chat_id, "model", response_text)
+        
+        # Кристаллизация навыков в фоновом режиме (Skill Crystallization)
+        api_key = self._deps.settings.gemini_api_key
+        if api_key and (state.loop_count > 0 or len(history) > 4):
+            from core.skills import crystallize_skill
+            asyncio.create_task(crystallize_skill(self.current_chat_id, self._deps.obsidian_vault_path, api_key))
         
         # Генерация заголовка для нового чата
         if len(history) == 1:

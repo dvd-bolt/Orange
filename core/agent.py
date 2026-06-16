@@ -10,11 +10,14 @@ import asyncio
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
+if "GOOGLE_API_KEY" in os.environ and "GEMINI_API_KEY" not in os.environ:
+    os.environ["GEMINI_API_KEY"] = os.environ["GOOGLE_API_KEY"]
+
 LITE_MODEL = 'google:gemini-3.1-flash-lite'
 HEAVY_MODEL = 'google:gemini-3.1-flash-lite'
 
-_heavy_limiter_lock = asyncio.Lock()
-_lite_limiter_lock = asyncio.Lock()
+_heavy_limiter_lock = None
+_lite_limiter_lock = None
 _last_heavy_time = 0.0
 _last_lite_time = 0.0
 
@@ -82,6 +85,12 @@ class OrangeAgent(Agent):
                     target_model = HEAVY_MODEL
             
             # Local Rate Limiter checks before calling Google API
+            global _heavy_limiter_lock, _lite_limiter_lock
+            if _heavy_limiter_lock is None:
+                _heavy_limiter_lock = asyncio.Lock()
+            if _lite_limiter_lock is None:
+                _lite_limiter_lock = asyncio.Lock()
+                
             resolved_model = target_model or self.model
             if resolved_model == HEAVY_MODEL:
                 async with _heavy_limiter_lock:
@@ -149,6 +158,8 @@ agent.tool_plain(tools.fetch_website_fast)
 # Регистрация Playwright и новых инструментов
 agent.tool(tools.deep_analyze_website)
 agent.tool(tools.rewrite_file)
+agent.tool(tools.patch_file)
+agent.tool(tools.view_file_range)
 agent.tool(tools.add_task)
 agent.tool(tools.search_memory)
 agent.tool(tools.fetch_url)

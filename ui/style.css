@@ -220,3 +220,110 @@ button, nav, select, .material-symbols-outlined {
     -moz-user-select: none !important;
     -ms-user-select: none !important;
 }
+
+/* Drawflow Cyberpunk Custom Styles */
+#drawflow-container {
+    width: 100%;
+    height: 100%;
+    background-color: #000000;
+    background-image: radial-gradient(#262626 1px, transparent 1px);
+    background-size: 20px 20px;
+    position: relative;
+}
+
+.drawflow {
+    background: transparent;
+}
+
+.drawflow .drawflow-node {
+    background: #0e0e0e !important;
+    border: 1px solid #ff6600 !important;
+    border-radius: 0px !important;
+    color: #FFFFFF !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    width: 180px !important;
+    padding: 10px !important;
+    box-shadow: 0 0 10px rgba(255, 102, 0, 0.1) !important;
+    transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.drawflow .drawflow-node:hover {
+    box-shadow: 0 0 15px rgba(255, 102, 0, 0.3) !important;
+    border-color: #ffffff !important;
+}
+
+.drawflow .drawflow-node .inputs, .drawflow .drawflow-node .outputs {
+    width: 0;
+}
+
+.drawflow .drawflow-node .input, .drawflow .drawflow-node .output {
+    width: 10px !important;
+    height: 10px !important;
+    background: #000000 !important;
+    border: 1px solid #ff6600 !important;
+    border-radius: 0px !important;
+}
+
+.drawflow .drawflow-node .input:hover, .drawflow .drawflow-node .output:hover {
+    background: #ff6600 !important;
+}
+
+.drawflow .drawflow-node .input {
+    left: -6px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+}
+
+.drawflow .drawflow-node .output {
+    right: -6px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+}
+
+.drawflow .connection .main-path {
+    stroke: #ff6600 !important;
+    stroke-width: 2px !important;
+}
+
+.drawflow .connection .main-path:hover {
+    stroke: #ffffff !important;
+}
+
+.drawflow-delete {
+    border: 1px solid #ff6600 !important;
+    background: #0e0e0e !important;
+    color: #ff6600 !important;
+    border-radius: 0px !important;
+    font-family: 'JetBrains Mono', monospace !important;
+}
+
+.drawflow-delete:hover {
+    background: #ff6600 !important;
+    color: #000000 !important;
+}
+
+/* Tool Card / Details styles */
+.tool-card {
+    border: 1px solid #262626 !important;
+    background-color: rgba(0, 0, 0, 0.4) !important;
+    margin-top: 0.75rem !important;
+    margin-bottom: 0.75rem !important;
+    border-radius: 0px !important;
+}
+
+.tool-card[open] {
+    border-color: #ff6600 !important;
+}
+
+.tool-card summary {
+    outline: none !important;
+    list-style: none !important;
+}
+
+.tool-card summary::-webkit-details-marker {
+    display: none !important;
+}
+
+.tool-card summary:focus {
+    box-shadow: inset 0 0 4px rgba(255, 102, 0, 0.2) !important;
+}

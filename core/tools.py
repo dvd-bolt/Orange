@@ -24,6 +24,49 @@ def validate_path(vault_root: str, user_path: str) -> str:
     if common != abs_vault_root:
         raise ValueError(f"Путь находится вне хранилища: {resolved_path} не входит в {abs_vault_root}")
         
+    # Check if the path exists directly
+    if os.path.exists(resolved_path):
+        return resolved_path
+        
+    # Check if the path with .md appended exists directly
+    if not resolved_path.lower().endswith('.md'):
+        resolved_path_md = resolved_path + '.md'
+        if os.path.exists(resolved_path_md):
+            return resolved_path_md
+            
+    # Search in subdirectories if not found directly
+    filename = os.path.basename(user_path)
+    if filename:
+        filename_lower = filename.lower()
+        if filename_lower.endswith('.md'):
+            targets = {filename_lower, filename_lower[:-3]}
+        else:
+            targets = {filename_lower, filename_lower + '.md'}
+            
+        matches = []
+        for root, dirs, files in os.walk(abs_vault_root):
+            # Filter out hidden subdirectories (those starting with '.', like .git or .obsidian)
+            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            
+            for f in files:
+                if f.lower() in targets:
+                    matches.append(os.path.abspath(os.path.join(root, f)))
+                    
+        if matches:
+            matches.sort()
+            matched_path = matches[0]
+            
+            # Verify the matched path is indeed within the vault root
+            try:
+                common_match = os.path.commonpath([abs_vault_root, matched_path])
+            except ValueError as e:
+                raise ValueError(f"Путь находится вне хранилища: {user_path}. Ошибка: {e}")
+                
+            if common_match != abs_vault_root:
+                raise ValueError(f"Путь находится вне хранилища: {matched_path} не входит в {abs_vault_root}")
+                
+            return matched_path
+            
     return resolved_path
 
 async def deep_analyze_website(ctx: RunContext, url: str) -> str:
@@ -61,7 +104,7 @@ async def read_file_fast(ctx: RunContext[OrangeDeps], file_path: str) -> str:
         rel_path = rel_path.replace('\\', '/')
         
         from core.markdown_ops import read_note_cli
-        return await read_note_cli(rel_path)
+        return await read_note_cli(rel_path, vault_path=obsidian_root)
     except Exception as e:
         return f"Ошибка: {str(e)}"
 
@@ -699,5 +742,57 @@ async def expand_note_links(ctx: RunContext[OrangeDeps], file_path: str) -> str:
         
     return "Не удалось раскрыть ссылки в заметке."
 
+async def patch_file(ctx: RunContext[OrangeDeps], file_path: str, search_block: str, replace_block: str) -> str:
+    """
+    Точечное редактирование (патчинг) файла в хранилище.
+    Заменяет уникальное совпадение search_block на replace_block.
+    """
+    try:
+        valid_path = validate_path(ctx.deps.obsidian_vault_path, file_path)
+        if not os.path.exists(valid_path):
+            return f"Ошибка: файл {file_path} не найден."
+            
+        async with aiofiles.open(valid_path, mode='r', encoding='utf-8') as f:
+            content = await f.read()
+            
+        occurrences = content.count(search_block)
+        if occurrences == 0:
+            return f"Ошибка: блок поиска не найден в файле. Убедитесь в точном соответствии символов и пробелов."
+        if occurrences > 1:
+            return f"Ошибка: блок поиска найден {occurrences} раз(а). Блок поиска должен быть уникальным во избежание ошибочных замен."
+            
+        new_content = content.replace(search_block, replace_block, 1)
+        await atomic_write_obsidian_note(valid_path, new_content)
+        return "Успех: файл успешно отредактирован."
+    except Exception as e:
+        return f"Ошибка при редактировании файла: {str(e)}"
 
-
+async def view_file_range(ctx: RunContext[OrangeDeps], file_path: str, start_line: int, end_line: int) -> str:
+    """
+    Чтение определенного диапазона строк файла с нумерацией строк (1-indexed).
+    Помогает экономить контекст при работе с большими файлами.
+    """
+    try:
+        valid_path = validate_path(ctx.deps.obsidian_vault_path, file_path)
+        if not os.path.exists(valid_path):
+            return f"Ошибка: файл {file_path} не найден."
+            
+        async with aiofiles.open(valid_path, mode='r', encoding='utf-8') as f:
+            lines = await f.readlines()
+            
+        total_lines = len(lines)
+        if start_line < 1:
+            start_line = 1
+        if end_line > total_lines:
+            end_line = total_lines
+        if start_line > end_line:
+            return f"Ошибка: start_line ({start_line}) не может быть больше end_line ({end_line})."
+            
+        output = []
+        for idx in range(start_line - 1, end_line):
+            output.append(f"{idx + 1}: {lines[idx].rstrip(chr(10).replace(chr(13), ''))}")
+            
+        header = f"=== Просмотр файла {file_path} (Строки {start_line}-{end_line} из {total_lines}) ===\n"
+        return header + "\n".join(output)
+    except Exception as e:
+        return f"Ошибка при просмотре файла: {str(e)}"

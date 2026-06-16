@@ -1,47 +1,69 @@
-# Project: ORANGE OS Obsidian & Telegram integration
+# Project: Jarvis Upgrade (Phases 2, 3, and 4)
 
 ## Architecture
-ORANGE is a PyWebView-based desktop AI assistant with a Python backend and HTML/JS frontend.
-The architecture is structured as follows:
-- **UI layer**: `ui/index.html`, `ui/main.js`, `ui/style.css` communicating with Python via `pywebview`'s JS API Bridge.
-- **Bridge layer**: `core/bridge.py` routing frontend API calls to Python core functions and async event loop.
-- **Agent Core**: `core/agent.py`, `core/tools.py` executing Gemini LLM prompts with local database memory (`core/db.py`) and Obsidian tools.
-- **Obsidian Integration**: Web server running in background on port 8000 handling external queries, mapping note-context to agent queries.
-- **Telegram Daemon**: Background client thread filtering incoming alerts, logging to the Telemetry panel, and updating tasks.
-
-## Code Layout
-- `main.py`: Application startup, background loop orchestration, WebView instantiation, and observer cleanup.
-- `config/settings.json`: JSON configuration settings containing authorization tokens, telemetry preferences, and daemon status.
-- `core/bridge.py`: Class `BridgeAPI` exposing methods to JS, triggering modals, handling overrides and panics.
-- `core/daemon_manager.py` (New): Controls background worker thread lifecycles (Telegram daemon).
-- `integrations/obsidian/` (New): Script/bridge plugin to interface Obsidian app workspace with ORANGE backend.
-- `scratch/` (New): Directory for validation tests (`test_bugfixes.py`, `test_advanced.py`).
+The system consists of the following components:
+1. **Agent Core & FSM Graph** (`core/graph.py`):
+   - Implements `OrangeGraphState` transitions using `pydantic-graph`.
+   - Transitions are profile-specific: `base`, `coder`, `deep_research`, and `project_manager`.
+   - Node-level plan checkpointing serializes state into SQLite.
+2. **Scenario Engine & Context Condenser**:
+   - Parses declarative YAML/JSON scenarios defining sequential or conditional steps and tool calls.
+   - Condenses message context dynamically, protecting head (system prompt) and tail (recent messages) and summarizing the middle.
+3. **Unified Trigger Registry & Security Gate**:
+   - Central registry for `CronTrigger`, `FileWatchTrigger` (watchdog), and `WebhookTrigger`.
+   - Risk classification in `SecurityAnalyzer` blocks command execution/file writes outside the vault until PyQt UI confirmation is received.
+4. **Web Automation**:
+   - Playwright CDP integration attaches to active Chrome instances.
+   - Interactive DOM parser lists numbered interactive elements.
+   - Screen annotator generates visual markup of the viewport.
+5. **UI Integration**:
+   - Drawflow visualizes scenario topologies.
+   - Chat UI displays collapsible tool cards for cleaner logs.
 
 ## Milestones
+
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| 1 | M1: Obsidian Integration | HTTP server on port 8000; `/query` endpoint; `integrations/obsidian/` script; vault root adjustment | None | PLANNED |
-| 2 | M2: Telegram Daemon | `core/daemon_manager.py`; thread lifecycle; settings toggles; telemetry/inbox routing | M1 | PLANNED |
-| 3 | M3: UI Overlay Audit | Cleanup duplicates; error interception for panic; async Future command override | M2 | PLANNED |
-| 4 | M4: Final E2E & Adversarial | PASS all E2E validation tests in `scratch/`; coverage hardening | M3 | PLANNED |
+| 1 | E2E Test Suite | Build opaque-box E2E test suite (Tiers 1-4) and generate `TEST_READY.md` | None | DONE |
+| 2 | Phase 2 Core | Profile Topologies, SQLite Checkpointing, Scenario Engine, Context Condenser | None | DONE |
+| 3 | Phase 3 Registry & Gate | Unified Trigger Registry, Security Gate, secure `.env` credential load | M2 | DONE |
+| 4 | Phase 3 Web Automation | Playwright CDP, DOM Parser, Vision Screen Annotator | M2 | DONE |
+| 5 | Phase 4 UI Integration | Drawflow visualizer, chat collapsible tool cards | M3, M4 | DONE |
+| 6 | Verification & Hardening | Pass 100% of E2E tests, run Tier 5 adversarial testing, write report | M1, M5 | DONE |
 
 ## Interface Contracts
-### Obsidian API Endpoint (`/query`)
-- **Method**: `POST`
-- **Path**: `/query`
-- **Request Body**: `{"note_title": "...", "content": "...", "query": "..."}`
-- **Response**: `{"answer": "..."}`
-- **Port**: `8000`
 
-### Settings Configuration
-- File: `config/settings.json`
-- Key: `"telegram_daemon"` ("ON" / "OFF")
+### ScenarioEngine ↔ Graph
+- Scenario YAML schema validation:
+  ```json
+  {
+    "name": "string",
+    "steps": [
+      {
+        "id": "string",
+        "action": "string",
+        "params": "dict",
+        "approval_required": "boolean"
+      }
+    ]
+  }
+  ```
+- Executed step-by-step by FSM graph, supporting conditional routing.
 
-### JS Bridge / System Panics
-- **Method**: `window.pywebview.api.trigger_panic(msg)` or evaluate JS: `triggerSystemPanic(msg)`
-- **Z-Index**: `999999` for `#system-panic-modal`
+### SecurityGate ↔ Bridge/PyQt UI
+- Risk assessment function: `analyze_risk(action_type: str, details: dict) -> str` (returns `"LOW"`, `"MEDIUM"`, `"HIGH"`)
+- Approval request API: `request_override(action_text: str) -> bool` (async, pops PyQt modal, blocks execution without freezing UI loop)
 
-### JS Bridge / Command Execution Override
-- **Method**: `await request_execution_override(cmd)`
-- **JS Call**: `showExecutionOverride(cmd)`
-- **Approval Callback**: `api_handle_override_response(approved: bool)` resolving async Future.
+### TriggerRegistry ↔ Agent Handler
+- Register trigger: `register_trigger(trigger_id: str, trigger_type: str, config: dict, callback: Callable)`
+- Triggers push events into agent execution queue.
+
+## Code Layout
+- `core/graph.py` — Profile graph topologies and step checkpointing.
+- `core/scenario.py` — Scenario engine parser and runner.
+- `core/condenser.py` — Multi-phase context condenser.
+- `core/triggers.py` — Unified Trigger Registry.
+- `core/security.py` — Risk analysis and PyQt dialog integration.
+- `core/web_aut.py` — Playwright CDP, DOM parser, and annotator.
+- `ui/` — pywebview files (chat UI, Drawflow scenario editor).
+- `scratch/` — Unit and integration tests.
