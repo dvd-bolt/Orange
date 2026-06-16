@@ -66,12 +66,12 @@ tailwind.config = {
                 "sidebar-width": "288px"
             },
             "fontFamily": {
-                "body-lg": ["JetBrains Mono"],
-                "label-caps": ["JetBrains Mono"],
-                "label-mono": ["JetBrains Mono"],
-                "headline-md": ["JetBrains Mono"],
-                "headline-lg": ["JetBrains Mono"],
-                "body-sm": ["JetBrains Mono"]
+                "body-lg": ["Inter", "sans-serif"],
+                "label-caps": ["Inter", "sans-serif"],
+                "label-mono": ["JetBrains Mono", "monospace"],
+                "headline-md": ["Inter", "sans-serif"],
+                "headline-lg": ["Inter", "sans-serif"],
+                "body-sm": ["Inter", "sans-serif"]
             },
             "fontSize": {
                 "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0px", "fontWeight": "400" }],
