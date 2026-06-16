@@ -74,7 +74,7 @@ import subprocess
 import json
 from typing import List
 
-_obsidian_cli_lock = asyncio.Lock()
+_obsidian_cli_lock = None
 
 def decode_bytes(data: bytes) -> str:
     """Safely decodes bytes to string trying utf-8, cp1251, cp866."""
@@ -89,6 +89,9 @@ def decode_bytes(data: bytes) -> str:
 
 async def run_obsidian_cli(args: List[str]) -> str:
     """Runs obsidian CLI command with Anti-Wedge Delay protection."""
+    global _obsidian_cli_lock
+    if _obsidian_cli_lock is None:
+        _obsidian_cli_lock = asyncio.Lock()
     async with _obsidian_cli_lock:
         try:
             cmd = ["obsidian"] + args
