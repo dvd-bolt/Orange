@@ -24,6 +24,7 @@ body {
 
 /* CRT Scanlines and animations */
 .crt-scanline {
+    display: none !important;
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
     background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
@@ -33,6 +34,7 @@ body {
 }
 
 .scanline {
+    display: none !important;
     width: 100%;
     height: 2px;
     background: rgba(255, 102, 0, 0.1);
