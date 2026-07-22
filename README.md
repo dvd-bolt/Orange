@@ -76,3 +76,8 @@ working more slowly and report the build command in tool output.
 - Project Pages: generated `_Orange/Project Pages/` summaries for project notes
 - Weekly Review: generated `_Orange/Reviews/` weekly vault report
 - Audit Log: local action history for proposals, approvals, writes, backups, and memory edits
+- Vault Time Machine: filesystem-based activity timeline, themes, quiet notes, bursts
+- Contradiction Finder: possible conflicting decisions and task-state conflicts
+- Agent Debate: local Engineer / Strategist / Skeptic debate from vault context
+- Dormant Project Radar: stale project notes with open loops and revive actions
+- Personal Operating Manual: generated working rules for using ORANGE and the vault

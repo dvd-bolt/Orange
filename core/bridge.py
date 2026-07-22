@@ -9,6 +9,7 @@ from core.services.dashboard_service import DashboardService
 from core.services.inbox_service import InboxService
 from core.services.project_pages_service import ProjectPagesService
 from core.services.settings_service import SettingsService
+from core.services.vault_intelligence_service import VaultIntelligenceService
 from core.services.weekly_review_service import WeeklyReviewService
 
 import functools
@@ -42,6 +43,7 @@ class BridgeAPI:
         self._attachment_service = AttachmentService()
         self._inbox_service = InboxService(deps.obsidian_vault_path)
         self._dashboard_service = DashboardService(deps.obsidian_vault_path)
+        self._vault_intelligence_service = VaultIntelligenceService(deps.obsidian_vault_path)
         self._project_pages_service = ProjectPagesService(deps.obsidian_vault_path)
         self._weekly_review_service = WeeklyReviewService(deps.obsidian_vault_path)
         self._agent_runner = AgentRunner(
@@ -312,6 +314,36 @@ class BridgeAPI:
     def api_get_morning_dashboard(self) -> str:
         try:
             return json.dumps({"status": "success", "dashboard": self._dashboard_service.build_morning_dashboard()})
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def api_get_vault_time_machine(self, days: int = 90) -> str:
+        try:
+            return json.dumps(self._vault_intelligence_service.build_time_machine(int(days)))
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def api_find_contradictions(self) -> str:
+        try:
+            return json.dumps(self._vault_intelligence_service.find_contradictions())
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e), "findings": []})
+
+    def api_run_agent_debate(self, topic: str = "") -> str:
+        try:
+            return json.dumps(self._vault_intelligence_service.run_agent_debate(topic))
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def api_get_dormant_projects(self, stale_days: int = 30) -> str:
+        try:
+            return json.dumps(self._vault_intelligence_service.find_dormant_projects(int(stale_days)))
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e), "items": []})
+
+    def api_get_operating_manual(self) -> str:
+        try:
+            return json.dumps(self._vault_intelligence_service.build_operating_manual())
         except Exception as e:
             return json.dumps({"status": "error", "message": str(e)})
 

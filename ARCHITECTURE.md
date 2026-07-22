@@ -24,6 +24,7 @@
   `attachment_service.py`, `agent_runner.py`, `inbox_service.py`,
   `dashboard_service.py`, `project_pages_service.py`,
   `weekly_review_service.py`, `write_preview_service.py`
+- Vault intelligence: `core/services/vault_intelligence_service.py`
 - Storage: SQLite through `core/db.py`
 - Vault search: BM25 plus optional Gemini embeddings
 - HTTP API: local `ThreadingHTTPServer` bound from `ORANGE_PORT`, exposing
@@ -45,6 +46,9 @@
   ISO week.
 - Write Preview builds unified diffs before applying vault writes.
 - Audit Log is stored in SQLite through `core/db.py`.
+- Vault Intelligence is a local analysis layer that builds Time Machine,
+  Contradiction Finder, Agent Debate, Dormant Project Radar, and Personal
+  Operating Manual views without requiring an LLM call.
 
 ## Defaults
 

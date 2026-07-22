@@ -128,6 +128,9 @@
                     <button onclick="openAuditLog()" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-2 py-1.5 hover:border-primary" title="Audit Log">
                         <span class="material-symbols-outlined text-[16px]">receipt_long</span>
                     </button>
+                    <button onclick="openVaultIntelligence('time-machine')" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-2 py-1.5 hover:border-primary" title="Vault Intelligence">
+                        <span class="material-symbols-outlined text-[16px]">psychology_alt</span>
+                    </button>
                     <!-- Knowledge Graph Button -->
                     <button onclick="toggleKnowledgeGraph()" id="btn-knowledge-graph" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-3 py-1.5 hover:border-primary">
                         <span class="material-symbols-outlined text-[16px]">schema</span>
@@ -478,6 +481,24 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
                 <button onclick="closeModal('audit-log-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
             </div>
             <div id="audit-log-list" class="overflow-y-auto space-y-2 pr-1"></div>
+        </div>
+    </div>
+
+    <!-- VAULT_INTELLIGENCE Modal -->
+    <div id="vault-intelligence-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
+        <div class="w-full max-w-6xl max-h-[86vh] border border-outline-variant p-6 bg-surface flex flex-col gap-4 relative">
+            <div class="flex justify-between items-center border-b border-outline-variant pb-2">
+                <h2 class="font-label-caps text-label-caps text-primary">[VAULT_INTELLIGENCE]</h2>
+                <button onclick="closeModal('vault-intelligence-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+            </div>
+            <div class="flex flex-wrap gap-2 border-b border-outline pb-3">
+                <button onclick="openVaultIntelligence('time-machine')" data-intel-tab="time-machine" class="intel-tab border border-primary text-primary px-2 py-1 font-label-mono text-[10px]">TIME_MACHINE</button>
+                <button onclick="openVaultIntelligence('contradictions')" data-intel-tab="contradictions" class="intel-tab border border-outline text-on-surface px-2 py-1 font-label-mono text-[10px]">CONTRADICTIONS</button>
+                <button onclick="openVaultIntelligence('debate')" data-intel-tab="debate" class="intel-tab border border-outline text-on-surface px-2 py-1 font-label-mono text-[10px]">AGENT_DEBATE</button>
+                <button onclick="openVaultIntelligence('dormant')" data-intel-tab="dormant" class="intel-tab border border-outline text-on-surface px-2 py-1 font-label-mono text-[10px]">DORMANT_RADAR</button>
+                <button onclick="openVaultIntelligence('manual')" data-intel-tab="manual" class="intel-tab border border-outline text-on-surface px-2 py-1 font-label-mono text-[10px]">OPERATING_MANUAL</button>
+            </div>
+            <div id="vault-intelligence-body" class="overflow-y-auto pr-1"></div>
         </div>
     </div>
 

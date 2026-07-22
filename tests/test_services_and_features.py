@@ -1,4 +1,6 @@
 import asyncio
+import os
+import time
 
 import pytest
 
@@ -142,6 +144,60 @@ def test_weekly_review_service_previews_and_applies(tmp_path, monkeypatch):
     assert (tmp_path / "_Orange" / "Reviews").exists()
 
 
+def test_vault_intelligence_service_reports_core_views(tmp_path, monkeypatch):
+    from core import db
+    from core.services.vault_intelligence_service import VaultIntelligenceService
+
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "orange_memory.db"))
+    db.init_db()
+
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    roadmap = projects / "roadmap.md"
+    roadmap.write_text(
+        "# Roadmap\n"
+        "Decision: use local storage for backup\n"
+        "- [ ] Ship safer write flow\n"
+        "[[manual]]\n",
+        encoding="utf-8",
+    )
+    conflict = tmp_path / "manual.md"
+    conflict.write_text(
+        "# Manual\n"
+        "Decision: do not use local storage for backup\n"
+        "- [x] Ship safer write flow\n",
+        encoding="utf-8",
+    )
+    old_project = projects / "legacy.md"
+    old_project.write_text("# Legacy Project\n- [ ] Decide archive path\n", encoding="utf-8")
+    old_time = time.time() - 90 * 24 * 60 * 60
+    os.utime(old_project, (old_time, old_time))
+
+    service = VaultIntelligenceService(str(tmp_path))
+
+    time_machine = service.build_time_machine()
+    assert time_machine["status"] == "success"
+    assert time_machine["total_notes"] == 3
+    assert time_machine["themes"]
+
+    contradictions = service.find_contradictions()
+    assert contradictions["status"] == "success"
+    assert any(item["type"] == "policy_conflict" for item in contradictions["findings"])
+    assert any(item["type"] == "task_state_conflict" for item in contradictions["findings"])
+
+    debate = service.run_agent_debate("backup storage")
+    assert debate["status"] == "success"
+    assert [round_item["role"] for round_item in debate["rounds"]] == ["Engineer", "Strategist", "Skeptic"]
+
+    dormant = service.find_dormant_projects(stale_days=30)
+    assert dormant["items"]
+    assert dormant["items"][0]["path"].endswith("legacy.md")
+
+    manual = service.build_operating_manual()
+    assert manual["status"] == "success"
+    assert manual["manual"]["principles"]
+
+
 def test_bridge_public_api_contract_includes_new_methods():
     pytest.importorskip("pydantic_ai")
     from core.bridge import BridgeAPI
@@ -163,6 +219,11 @@ def test_bridge_public_api_contract_includes_new_methods():
         "api_get_weekly_review_preview",
         "api_apply_weekly_review",
         "api_get_audit_log",
+        "api_get_vault_time_machine",
+        "api_find_contradictions",
+        "api_run_agent_debate",
+        "api_get_dormant_projects",
+        "api_get_operating_manual",
     }
 
     missing = [name for name in expected_methods if not hasattr(BridgeAPI, name)]

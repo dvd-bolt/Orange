@@ -100,6 +100,7 @@ let lastGraphData = null;
 let currentGraphFilter = 'all';
 let projectPagesPreview = null;
 let weeklyReviewPreview = null;
+let vaultIntelligenceMode = 'time-machine';
 
 // DOM Elements
 const inputEl = document.getElementById('user-input');
@@ -117,6 +118,11 @@ const commandPaletteCommands = [
     { id: 'project-pages', label: 'PROJECT_PAGES', hint: 'Build project overview pages with diff preview', run: () => openProjectPages() },
     { id: 'weekly-review', label: 'WEEKLY_REVIEW', hint: 'Generate this week review with diff preview', run: () => openWeeklyReview() },
     { id: 'audit-log', label: 'AUDIT_LOG', hint: 'Open command and write history', run: () => openAuditLog() },
+    { id: 'vault-time-machine', label: 'VAULT_TIME_MACHINE', hint: 'Show vault activity timeline and themes', run: () => openVaultIntelligence('time-machine') },
+    { id: 'contradiction-finder', label: 'CONTRADICTION_FINDER', hint: 'Find conflicting notes and task states', run: () => openVaultIntelligence('contradictions') },
+    { id: 'agent-debate', label: 'AGENT_DEBATE', hint: 'Run Engineer / Strategist / Skeptic debate', run: () => openVaultIntelligence('debate') },
+    { id: 'dormant-radar', label: 'DORMANT_PROJECT_RADAR', hint: 'Find stale projects with open loops', run: () => openVaultIntelligence('dormant') },
+    { id: 'operating-manual', label: 'OPERATING_MANUAL', hint: 'Build personal operating manual', run: () => openVaultIntelligence('manual') },
     { id: 'telemetry', label: 'TOGGLE_TELEMETRY', hint: 'Open or close system telemetry', run: () => toggleTelemetry() },
     { id: 'settings', label: 'OPEN_SETTINGS', hint: 'Open global settings', run: () => openSettings() },
     { id: 'backup', label: 'RUN_LOCAL_BACKUP', hint: 'Manual local vault backup', run: () => runManualBackup() },
@@ -1223,6 +1229,172 @@ function renderAuditLog(items) {
     `).join('');
 }
 
+async function openVaultIntelligence(mode = 'time-machine') {
+    if (!window.pywebview) return;
+    vaultIntelligenceMode = mode;
+    openModal('vault-intelligence-modal');
+    updateVaultIntelligenceTabs(mode);
+    const body = document.getElementById('vault-intelligence-body');
+    if (body) body.innerHTML = '<div class="p-3 text-primary font-label-mono text-[11px]">BUILDING_INTELLIGENCE_REPORT...</div>';
+
+    try {
+        if (mode === 'time-machine') {
+            const payload = JSON.parse(await window.pywebview.api.api_get_vault_time_machine(90));
+            if (payload.status !== 'success') throw new Error(payload.message || 'Time machine failed');
+            renderVaultTimeMachine(payload);
+        } else if (mode === 'contradictions') {
+            const payload = JSON.parse(await window.pywebview.api.api_find_contradictions());
+            if (payload.status !== 'success') throw new Error(payload.message || 'Contradiction scan failed');
+            renderContradictions(payload);
+        } else if (mode === 'debate') {
+            const topic = document.getElementById('agent-debate-topic')?.value || '';
+            const payload = JSON.parse(await window.pywebview.api.api_run_agent_debate(topic));
+            if (payload.status !== 'success') throw new Error(payload.message || 'Debate failed');
+            renderAgentDebate(payload);
+        } else if (mode === 'dormant') {
+            const payload = JSON.parse(await window.pywebview.api.api_get_dormant_projects(30));
+            if (payload.status !== 'success') throw new Error(payload.message || 'Dormant scan failed');
+            renderDormantProjects(payload);
+        } else if (mode === 'manual') {
+            const payload = JSON.parse(await window.pywebview.api.api_get_operating_manual());
+            if (payload.status !== 'success') throw new Error(payload.message || 'Manual failed');
+            renderOperatingManual(payload.manual);
+        }
+    } catch(e) {
+        if (body) body.innerHTML = `<div class="p-3 text-error font-label-mono text-[11px]">${escapeHTML(e.toString())}</div>`;
+    }
+}
+
+function updateVaultIntelligenceTabs(mode) {
+    document.querySelectorAll('.intel-tab').forEach(btn => {
+        const active = btn.getAttribute('data-intel-tab') === mode;
+        btn.className = active
+            ? "intel-tab border border-primary text-primary px-2 py-1 font-label-mono text-[10px]"
+            : "intel-tab border border-outline text-on-surface px-2 py-1 font-label-mono text-[10px]";
+    });
+}
+
+function intelSection(title, bodyHtml) {
+    return `
+        <section class="border border-outline p-3 bg-black/30">
+            <div class="font-label-caps text-label-caps text-primary border-b border-outline pb-2 mb-2">${escapeHTML(title)}</div>
+            ${bodyHtml}
+        </section>
+    `;
+}
+
+function renderVaultTimeMachine(payload) {
+    const body = document.getElementById('vault-intelligence-body');
+    if (!body) return;
+    const themeHtml = (payload.themes || []).map(item =>
+        `<span class="border border-primary text-primary px-2 py-0.5 font-label-mono text-[10px]">${escapeHTML(item.term)}:${escapeHTML(item.count)}</span>`
+    ).join(' ') || '<span class="text-on-surface-variant">NO_THEMES</span>';
+    const noteRow = note => `<div class="font-label-mono text-[11px] text-on-surface break-words">${escapeHTML(note.title)} <span class="opacity-50">${escapeHTML(note.path)} / ${escapeHTML(note.modified_at)}</span></div>`;
+    const timelineHtml = (payload.timeline || []).map(bucket => `
+        <div class="border border-outline p-2">
+            <div class="font-label-mono text-[10px] text-primary mb-1">${escapeHTML(bucket.period)} / ${escapeHTML(bucket.count)} notes</div>
+            <div class="space-y-1">${(bucket.notes || []).map(noteRow).join('')}</div>
+        </div>
+    `).join('') || '<div class="text-on-surface-variant font-label-mono text-[10px]">NO_RECENT_ACTIVITY</div>';
+    body.innerHTML = `
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            ${intelSection('SYSTEM_SNAPSHOT', `
+                <div class="font-label-mono text-[11px] text-on-surface space-y-1">
+                    <div>TOTAL_NOTES: ${escapeHTML(payload.total_notes)}</div>
+                    <div>RECENT_NOTES: ${escapeHTML(payload.recent_notes)}</div>
+                    <div>GENERATED_AT: ${escapeHTML(payload.generated_at)}</div>
+                </div>
+            `)}
+            ${intelSection('THEMES', `<div class="flex flex-wrap gap-1">${themeHtml}</div>`)}
+            ${intelSection('TIMELINE', `<div class="space-y-2">${timelineHtml}</div>`)}
+            ${intelSection('ACTIVITY_BURSTS', `<div class="space-y-1">${(payload.activity_bursts || []).map(noteRow).join('') || '<div class="text-on-surface-variant">EMPTY</div>'}</div>`)}
+            ${intelSection('QUIETEST_NOTES', `<div class="space-y-1">${(payload.quietest_notes || []).map(noteRow).join('') || '<div class="text-on-surface-variant">EMPTY</div>'}</div>`)}
+        </div>
+    `;
+}
+
+function renderContradictions(payload) {
+    const body = document.getElementById('vault-intelligence-body');
+    if (!body) return;
+    const rows = (payload.findings || []).map(item => `
+        <section class="border border-outline p-3 bg-black/30">
+            <div class="flex flex-wrap items-center gap-2 border-b border-outline pb-2 mb-2">
+                <span class="border border-primary text-primary px-2 py-0.5 font-label-mono text-[10px]">${escapeHTML(item.type)}</span>
+                <span class="text-on-surface-variant font-label-mono text-[10px]">SEVERITY ${escapeHTML(item.severity)}</span>
+                <span class="text-primary font-label-mono text-[10px]">${escapeHTML(item.topic)}</span>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                <pre class="whitespace-pre-wrap break-words text-[11px] border border-outline p-2">${escapeHTML(JSON.stringify(item.left, null, 2))}</pre>
+                <pre class="whitespace-pre-wrap break-words text-[11px] border border-outline p-2">${escapeHTML(JSON.stringify(item.right, null, 2))}</pre>
+            </div>
+            <div class="font-label-mono text-[11px] text-on-surface mt-2">${escapeHTML(item.suggestion || '')}</div>
+        </section>
+    `).join('');
+    body.innerHTML = rows || '<div class="p-3 text-on-surface-variant font-label-mono text-[11px]">NO_CONTRADICTIONS_FOUND</div>';
+}
+
+function renderAgentDebate(payload) {
+    const body = document.getElementById('vault-intelligence-body');
+    if (!body) return;
+    const context = (payload.context_notes || []).map(note =>
+        `<div class="font-label-mono text-[10px] text-on-surface break-words">${escapeHTML(note.title)} <span class="opacity-50">${escapeHTML(note.path)}</span></div>`
+    ).join('');
+    const rounds = (payload.rounds || []).map(round => intelSection(round.role, `
+        <div class="font-label-mono text-[11px] text-primary mb-2">${escapeHTML(round.stance)}</div>
+        <div class="space-y-1">${(round.points || []).map(point => `<div class="font-label-mono text-[11px] text-on-surface">- ${escapeHTML(point)}</div>`).join('')}</div>
+    `)).join('');
+    body.innerHTML = `
+        <div class="flex gap-2 mb-3">
+            <input id="agent-debate-topic" class="flex-1 bg-transparent border border-outline text-on-surface font-label-mono text-[11px] px-3 py-2 focus:border-primary focus:ring-0 outline-none" value="${escapeHTML(payload.topic || '')}" placeholder="debate topic"/>
+            <button onclick="runVaultDebate()" class="border border-primary text-primary hover:bg-primary hover:text-on-primary px-3 py-2 font-label-mono text-[10px]">RUN</button>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-3">${rounds}</div>
+        ${intelSection('SYNTHESIS', `
+            <div class="font-label-mono text-[11px] text-primary mb-2">${escapeHTML(payload.synthesis?.decision || '')}</div>
+            <div class="space-y-1">${(payload.synthesis?.next_actions || []).map(action => `<div class="font-label-mono text-[11px] text-on-surface">- ${escapeHTML(action)}</div>`).join('')}</div>
+        `)}
+        ${intelSection('CONTEXT_NOTES', `<div class="space-y-1">${context || '<div class="text-on-surface-variant">EMPTY</div>'}</div>`)}
+    `;
+}
+
+function runVaultDebate() {
+    openVaultIntelligence('debate');
+}
+
+function renderDormantProjects(payload) {
+    const body = document.getElementById('vault-intelligence-body');
+    if (!body) return;
+    const rows = (payload.items || []).map(item => `
+        <section class="border border-outline p-3 bg-black/30">
+            <div class="flex flex-wrap items-center gap-2 border-b border-outline pb-2 mb-2">
+                <span class="text-primary font-label-mono text-[10px]">${escapeHTML(item.title)}</span>
+                <span class="border border-outline text-on-surface px-2 py-0.5 font-label-mono text-[10px]">SCORE ${escapeHTML(item.score)}</span>
+                <span class="text-on-surface-variant font-label-mono text-[10px]">${escapeHTML(item.age_days)} days</span>
+            </div>
+            <div class="font-label-mono text-[10px] text-on-surface-variant mb-2">${escapeHTML(item.path)}</div>
+            <div class="font-label-mono text-[11px] text-primary mb-2">${escapeHTML(item.revive_action)}</div>
+            <div class="space-y-1">${(item.open_tasks || []).map(task => `<div class="font-label-mono text-[11px] text-on-surface">- [ ] ${escapeHTML(task)}</div>`).join('')}</div>
+        </section>
+    `).join('');
+    body.innerHTML = `<div class="space-y-3">${rows || '<div class="p-3 text-on-surface-variant font-label-mono text-[11px]">NO_DORMANT_PROJECTS</div>'}</div>`;
+}
+
+function renderOperatingManual(manual) {
+    const body = document.getElementById('vault-intelligence-body');
+    if (!body) return;
+    const list = items => `<div class="space-y-1">${(items || []).map(item => `<div class="font-label-mono text-[11px] text-on-surface break-words">- ${escapeHTML(item)}</div>`).join('') || '<div class="text-on-surface-variant">EMPTY</div>'}</div>`;
+    body.innerHTML = `
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            ${intelSection('PRINCIPLES', list(manual?.principles))}
+            ${intelSection('CURRENT_CONTEXT', list(manual?.current_context))}
+            ${intelSection('HOW_TO_WORK_WITH_ORANGE', list(manual?.how_to_work_with_orange))}
+            ${intelSection('REVIEW_RHYTHM', list(manual?.review_rhythm))}
+            ${intelSection('SAFETY_CONTRACT', list(manual?.safety_contract))}
+            ${intelSection('RECENT_SYSTEM_EVENTS', list(manual?.recent_system_events))}
+        </div>
+    `;
+}
+
 // System Panic & Command Override
 function triggerSystemPanic(errorText) {
     const textEl = document.getElementById('system-panic-text');
@@ -1368,6 +1540,8 @@ window.applyProjectPages = applyProjectPages;
 window.openWeeklyReview = openWeeklyReview;
 window.applyWeeklyReview = applyWeeklyReview;
 window.openAuditLog = openAuditLog;
+window.openVaultIntelligence = openVaultIntelligence;
+window.runVaultDebate = runVaultDebate;
 
 // Localization dynamic switcher
 let i18nData = null;

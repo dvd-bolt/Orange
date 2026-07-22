@@ -27,6 +27,7 @@ The architecture is structured as follows:
 | 4 | M4: Validation | Unit tests, CI, restricted executor checks | M3 | IN PROGRESS |
 | 5 | M5: Product Controls | Memory Editor, Smart Inbox, Knowledge Graph v2, Morning Dashboard | M4 | IMPLEMENTED |
 | 6 | M6: Trust Layer | Diff preview, Project Pages, Weekly Review, Audit Log | M5 | IMPLEMENTED |
+| 7 | M7: Vault Intelligence | Time Machine, Contradiction Finder, Agent Debate, Dormant Radar, Operating Manual | M6 | IMPLEMENTED |
 
 ## Interface Contracts
 ### Obsidian API Endpoint (`/query`)
@@ -59,6 +60,13 @@ The architecture is structured as follows:
 - `api_get_weekly_review_preview()`
 - `api_apply_weekly_review()`
 - `api_get_audit_log(limit)`
+
+### Vault Intelligence
+- `api_get_vault_time_machine(days)`
+- `api_find_contradictions()`
+- `api_run_agent_debate(topic)`
+- `api_get_dormant_projects(stale_days)`
+- `api_get_operating_manual()`
 
 ### JS Bridge / System Panics
 - **Method**: `window.pywebview.api.trigger_panic(msg)` or evaluate JS: `triggerSystemPanic(msg)`
