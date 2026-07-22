@@ -1,5 +1,6 @@
 import asyncio
 import orange_core
+from typing import Optional
 from core.agent import agent
 from core.profiles import PROFILES
 from core.dependencies import OrangeDeps
@@ -61,6 +62,25 @@ class BridgeAPI:
         self._deps = deps
         self.current_chat_id = None
         self._override_future = None
+
+        vault_path = self._deps.obsidian_vault_path
+        from core.services.inbox_service import InboxService
+        from core.services.dashboard_service import DashboardService
+        from core.services.vault_intelligence_service import VaultIntelligenceService
+        from core.services.project_pages_service import ProjectPagesService
+        from core.services.weekly_review_service import WeeklyReviewService
+        from core.services.write_preview_service import WritePreviewService
+        from core.services.attachment_service import AttachmentService
+        from core.services.settings_service import SettingsService
+
+        self._inbox_service = InboxService(vault_path)
+        self._dashboard_service = DashboardService(vault_path)
+        self._vault_intelligence_service = VaultIntelligenceService(vault_path)
+        self._project_pages_service = ProjectPagesService(vault_path)
+        self._weekly_review_service = WeeklyReviewService(vault_path)
+        self._write_preview_service = WritePreviewService(vault_path)
+        self._attachment_service = AttachmentService(vault_path)
+        self._settings_service = SettingsService()
 
     # --- API для работы с чатами из JS ---
     
@@ -602,9 +622,9 @@ class BridgeAPI:
             and hasattr(self._deps.mcp_client, '_session')
             and self._deps.mcp_client._session is not None
         )
-        db_path = "orange_memory.db"
-        db_exists = os.path.exists(db_path)
-        db_size_mb = round(os.path.getsize(db_path) / 1024 / 1024, 2) if db_exists else 0
+        from core.db import DB_PATH
+        db_exists = os.path.exists(DB_PATH)
+        db_size_mb = round(os.path.getsize(DB_PATH) / 1024 / 1024, 2) if db_exists else 0
         return json.dumps({
             "sqlite": {"status": "ONLINE" if db_exists else "ERROR", "size_mb": db_size_mb},
             "mcp": {"status": "CONNECTED" if mcp_connected else "OFFLINE"},
@@ -672,3 +692,164 @@ class BridgeAPI:
             return future.result()
         except Exception:
             return False
+
+    # --- API для сервисов (Vault Intelligence, Previews, Audit, Memory Editor) ---
+
+    def api_get_memory_items(self, limit: int = 200) -> str:
+        return self.api_list_memory_messages(limit)
+
+    def api_update_memory_item(self, message_id: int, is_pinned: Optional[bool] = None, exclude_from_rag: Optional[bool] = None) -> str:
+        return self.api_update_message_memory_flags(message_id, is_pinned, exclude_from_rag)
+
+    def api_delete_memory_item(self, message_id: int) -> str:
+        return self.api_delete_memory_message(message_id)
+
+    def api_get_http_base_url(self) -> str:
+        from config.settings import get_settings
+        port = getattr(get_settings(), 'orange_port', 8000)
+        return f"http://127.0.0.1:{port}"
+
+    def api_list_memory_messages(self, limit: int = 200) -> str:
+        try:
+            return json.dumps({"status": "success", "items": db.list_memory_messages(int(limit))})
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e), "items": []})
+
+    def api_update_message_memory_flags(self, message_id: int, is_pinned: Optional[bool] = None, exclude_from_rag: Optional[bool] = None) -> str:
+        try:
+            ok = db.update_message_memory_flags(int(message_id), is_pinned, exclude_from_rag)
+            return json.dumps({"status": "success" if ok else "error"})
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def api_delete_memory_message(self, message_id: int) -> str:
+        try:
+            ok = db.delete_message(int(message_id))
+            return json.dumps({"status": "success" if ok else "error"})
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def propose_inbox_review(self, file_path: str):
+        if not self._window:
+            return
+        try:
+            proposal = self._inbox_service.build_proposal(file_path)
+            db.add_audit_event("smart_inbox", "proposed", f"Proposal for {proposal.get('relative_path', file_path)}", json.dumps(proposal))
+            self._window.evaluate_js(f"addSmartInboxProposal({json.dumps(proposal)})")
+        except Exception as e:
+            payload = {"status": "error", "file_path": file_path, "filename": file_path, "message": str(e)}
+            self._window.evaluate_js(f"addSmartInboxProposal({json.dumps(payload)})")
+
+    def api_get_inbox_proposals(self) -> str:
+        try:
+            return json.dumps({"status": "success", "items": self._inbox_service.list_proposals()})
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e), "items": []})
+
+    def api_apply_inbox_proposal(self, file_path: str, category: str = "") -> str:
+        future = asyncio.run_coroutine_threadsafe(
+            self._inbox_service.apply_proposal(file_path, category),
+            self._background_loop,
+        )
+        try:
+            result = future.result()
+            db.add_audit_event("smart_inbox", result.get("status", "unknown"), result.get("message", "Applied inbox proposal"), json.dumps(result))
+            return json.dumps(result)
+        except Exception as e:
+            db.add_audit_event("smart_inbox", "error", str(e))
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def api_get_morning_dashboard(self) -> str:
+        try:
+            return json.dumps({"status": "success", "dashboard": self._dashboard_service.build_morning_dashboard()})
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def api_get_vault_time_machine(self, days: int = 90) -> str:
+        try:
+            return json.dumps(self._vault_intelligence_service.build_time_machine(int(days)))
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def api_find_contradictions(self) -> str:
+        try:
+            return json.dumps(self._vault_intelligence_service.find_contradictions())
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e), "findings": []})
+
+    def api_run_agent_debate(self, topic: str = "") -> str:
+        try:
+            return json.dumps(self._vault_intelligence_service.run_agent_debate(topic))
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def api_get_dormant_projects(self, stale_days: int = 30) -> str:
+        try:
+            return json.dumps(self._vault_intelligence_service.find_dormant_projects(int(stale_days)))
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e), "items": []})
+
+    def api_get_operating_manual(self) -> str:
+        try:
+            return json.dumps(self._vault_intelligence_service.build_operating_manual())
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def api_get_project_pages_preview(self) -> str:
+        try:
+            return json.dumps(self._project_pages_service.preview_project_pages())
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e), "plans": []})
+
+    def api_apply_project_pages(self) -> str:
+        future = asyncio.run_coroutine_threadsafe(
+            self._project_pages_service.apply_project_pages(),
+            self._background_loop,
+        )
+        try:
+            return json.dumps(future.result())
+        except Exception as e:
+            db.add_audit_event("project_pages", "error", str(e))
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def api_get_weekly_review_preview(self) -> str:
+        try:
+            return json.dumps(self._weekly_review_service.preview_weekly_review())
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def api_apply_weekly_review(self) -> str:
+        future = asyncio.run_coroutine_threadsafe(
+            self._weekly_review_service.apply_weekly_review(),
+            self._background_loop,
+        )
+        try:
+            return json.dumps(future.result())
+        except Exception as e:
+            db.add_audit_event("weekly_review", "error", str(e))
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def api_get_audit_log(self, limit: int = 200) -> str:
+        try:
+            return json.dumps({"status": "success", "items": db.list_audit_events(int(limit))})
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e), "items": []})
+
+    def api_get_write_preview(self, file_path: str, proposed_content: str) -> str:
+        try:
+            return json.dumps(self._write_preview_service.build_preview(file_path, proposed_content))
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def api_apply_write_preview(self, file_path: str, proposed_content: str) -> str:
+        future = asyncio.run_coroutine_threadsafe(
+            self._write_preview_service.apply_write(file_path, proposed_content),
+            self._background_loop,
+        )
+        try:
+            result = future.result()
+            db.add_audit_event("file_write", result.get("status", "unknown"), result.get("message", "Applied write preview"), json.dumps({"file_path": file_path}))
+            return json.dumps(result)
+        except Exception as e:
+            db.add_audit_event("file_write", "error", str(e), json.dumps({"file_path": file_path}))
+            return json.dumps({"status": "error", "message": str(e)})

@@ -12,6 +12,7 @@ def get_notes_graph(vault_path: str) -> Dict[str, List[Dict[str, Any]]]:
     nodes: List[Dict[str, Any]] = []
     links: List[Dict[str, Any]] = []
     node_ids: Set[str] = set()
+    node_content: Dict[str, str] = {}
 
     # Gather md files
     note_files: List[str] = []
@@ -29,15 +30,20 @@ def get_notes_graph(vault_path: str) -> Dict[str, List[Dict[str, Any]]]:
         name = os.path.splitext(os.path.basename(file_path))[0]
         if name and not name.startswith('.'):
             node_ids.add(name)
+            relative_path = os.path.relpath(file_path, abs_vault)
+            normalized_parts = {part.lower() for part in relative_path.split(os.sep)}
             
             # Simple grouping rule (e.g. check if in 04-projects folder)
             group = 1
-            if "04-projects" in file_path:
+            note_type = "note"
+            if "04-projects" in file_path or "projects" in normalized_parts:
                 group = 2
-            elif "_Inbox" in file_path:
+                note_type = "project"
+            elif "_inbox" in normalized_parts:
                 group = 3
+                note_type = "inbox"
                 
-            nodes.append({"id": name, "group": group})
+            nodes.append({"id": name, "group": group, "path": relative_path, "type": note_type})
 
     # Second pass: extract connections
     for file_path in note_files:
@@ -47,6 +53,7 @@ def get_notes_graph(vault_path: str) -> Dict[str, List[Dict[str, Any]]]:
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
+            node_content[source_name] = content
             # Regex matching WikiLinks: [[TargetName]] or [[TargetName|Alias]]
             matches = re.findall(r'\[\[([^\]|]+)(?:\|[^\]]+)?\]\]', content)
             for target_name in matches:
@@ -66,5 +73,27 @@ def get_notes_graph(vault_path: str) -> Dict[str, List[Dict[str, Any]]]:
                         })
         except Exception as e:
             print(f"[GraphAPI Warning] Failed to parse links in {file_path}: {e}")
+
+    degrees = {node_id: 0 for node_id in node_ids}
+    for link in links:
+        degrees[link["source"]] = degrees.get(link["source"], 0) + 1
+        degrees[link["target"]] = degrees.get(link["target"], 0) + 1
+
+    for node in nodes:
+        degree = degrees.get(node["id"], 0)
+        content = node_content.get(node["id"], "")
+        existing_targets = set(re.findall(r'\[\[([^\]|]+)(?:\|[^\]]+)?\]\]', content))
+        suggestions = []
+        lowered_content = content.lower()
+        for candidate in sorted(node_ids):
+            if candidate == node["id"] or candidate in existing_targets:
+                continue
+            if candidate.lower() in lowered_content:
+                suggestions.append(candidate)
+            if len(suggestions) >= 5:
+                break
+        node["degree"] = degree
+        node["orphan"] = degree == 0
+        node["suggested_links"] = suggestions
 
     return {"nodes": nodes, "links": links}

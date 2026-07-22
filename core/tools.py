@@ -444,6 +444,99 @@ async def deep_research(ctx: RunContext, topic: str) -> str:
 
 # --- ИНСТРУМЕНТ ЛОКАЛЬНОГО ВЫПОЛНЕНИЯ КОДА (SANDBOX) ---
 
+SAFE_PYTHON_IMPORTS = {
+    "collections",
+    "datetime",
+    "decimal",
+    "fractions",
+    "itertools",
+    "json",
+    "math",
+    "random",
+    "re",
+    "statistics",
+}
+
+BLOCKED_PYTHON_NAMES = {
+    "__import__",
+    "__builtins__",
+    "breakpoint",
+    "compile",
+    "eval",
+    "exec",
+    "globals",
+    "help",
+    "input",
+    "locals",
+    "memoryview",
+    "open",
+    "vars",
+}
+
+BLOCKED_PYTHON_ATTRIBUTES = {
+    "chmod",
+    "chown",
+    "connect",
+    "exec",
+    "fork",
+    "kill",
+    "mkdir",
+    "open",
+    "popen",
+    "remove",
+    "rename",
+    "replace",
+    "request",
+    "rmdir",
+    "run",
+    "rmtree",
+    "send",
+    "socket",
+    "spawn",
+    "system",
+    "unlink",
+    "walk",
+    "write",
+}
+
+SUSPICIOUS_PATH_FRAGMENTS = (
+    "/Users/",
+    "/private/",
+    "/etc/",
+    "/var/",
+    "/tmp/",
+    "C:\\",
+    "..",
+    "~",
+)
+
+MAX_EXECUTOR_OUTPUT_BYTES = 50 * 1024
+
+def validate_python_for_restricted_executor(code: str) -> None:
+    """Rejects code that asks for file, process, network, or non-whitelisted imports."""
+    import ast
+
+    tree = ast.parse(code)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".")[0]
+                if root not in SAFE_PYTHON_IMPORTS:
+                    raise ValueError(f"Import '{alias.name}' is not permitted in restricted executor.")
+        elif isinstance(node, ast.ImportFrom):
+            root = (node.module or "").split(".")[0]
+            if node.level or root not in SAFE_PYTHON_IMPORTS:
+                raise ValueError(f"Import from '{node.module}' is not permitted in restricted executor.")
+        elif isinstance(node, ast.Name) and node.id in BLOCKED_PYTHON_NAMES:
+            raise ValueError(f"Identifier '{node.id}' is blocked in restricted executor.")
+        elif isinstance(node, ast.Attribute) and node.attr in BLOCKED_PYTHON_ATTRIBUTES:
+            raise ValueError(f"Attribute '.{node.attr}' is blocked in restricted executor.")
+        elif isinstance(node, ast.Attribute) and node.attr.startswith("__"):
+            raise ValueError("Dunder attribute access is blocked in restricted executor.")
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if any(fragment in node.value for fragment in SUSPICIOUS_PATH_FRAGMENTS):
+                raise ValueError("Absolute path access is blocked in restricted executor.")
+
 async def execute_python(ctx: RunContext[OrangeDeps], code: str) -> str:
     """
     Запускает переданный Python-код в локальном процессе (subprocess) с таймаутом 10 секунд.

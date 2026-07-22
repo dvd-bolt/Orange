@@ -102,7 +102,14 @@ async def run_obsidian_cli(args: List[str]) -> str:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            stdout, stderr = await proc.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15.0)
+            except asyncio.TimeoutError:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                raise RuntimeError("Obsidian CLI execution timed out after 15 seconds")
             
             # Anti-Wedge Delay: 60ms
             await asyncio.sleep(0.06)
@@ -113,6 +120,8 @@ async def run_obsidian_cli(args: List[str]) -> str:
                 
             return decode_bytes(stdout)
         except Exception as e:
+            if "timed out" in str(e):
+                raise e
             try:
                 cmd_args = [arg.replace("\\", "/") for arg in (["obsidian"] + args)]
                 cmd_str = " ".join([f'"{arg}"' for arg in cmd_args])
@@ -121,7 +130,14 @@ async def run_obsidian_cli(args: List[str]) -> str:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )
-                stdout, stderr = await proc.communicate()
+                try:
+                    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                    raise RuntimeError("Obsidian CLI execution timed out after 15 seconds")
                 await asyncio.sleep(0.06)
                 if proc.returncode != 0:
                     err_msg = decode_bytes(stderr).strip()

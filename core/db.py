@@ -1,10 +1,13 @@
+import os
 import sqlite3
 import uuid
 import threading
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
-DB_PATH = "orange_memory.db"
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DB_NAME = "orange_memory_test.db" if os.environ.get("ORANGE_TEST_MODE") == "1" else "orange_memory.db"
+DB_PATH = os.path.join(PROJECT_ROOT, DB_NAME)
 _lock = threading.Lock()
 
 def get_connection():
@@ -34,7 +37,28 @@ def init_db():
                     role TEXT,
                     content TEXT,
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_pinned BOOLEAN DEFAULT 0,
+                    exclude_from_rag BOOLEAN DEFAULT 0,
                     FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
+                )
+            ''')
+            try:
+                conn.execute("ALTER TABLE messages ADD COLUMN is_pinned BOOLEAN DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE messages ADD COLUMN exclude_from_rag BOOLEAN DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT,
+                    status TEXT,
+                    summary TEXT,
+                    details TEXT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             conn.execute('''
@@ -159,6 +183,7 @@ def add_message(chat_id: str, role: str, content: str):
                 (chat_id,)
             )
             conn.commit()
+            return int(msg_id)
 
 def get_chat_history(chat_id: str) -> List[Dict[str, Any]]:
     """Возвращает историю сообщений конкретного чата"""
@@ -202,6 +227,79 @@ def search_messages(query: str) -> List[Dict[str, Any]]:
                 (search_term,)
             )
             return [dict(row) for row in cursor.fetchall()]
+
+def list_memory_messages(limit: int = 200) -> List[Dict[str, Any]]:
+    """Returns recent messages with memory flags for Memory Editor."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            '''SELECT m.id, m.chat_id, m.role, m.content, m.timestamp,
+                      m.is_pinned, m.exclude_from_rag, c.title
+               FROM messages m
+               JOIN chats c ON m.chat_id = c.id
+               WHERE m.content IS NOT NULL AND TRIM(m.content) != ''
+               ORDER BY m.is_pinned DESC, m.timestamp DESC
+               LIMIT ?''',
+            (limit,)
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+def update_message_memory_flags(
+    message_id: int,
+    is_pinned: Optional[bool] = None,
+    exclude_from_rag: Optional[bool] = None,
+) -> bool:
+    """Updates Memory Editor flags on a message."""
+    updates = []
+    values = []
+    if is_pinned is not None:
+        updates.append("is_pinned = ?")
+        values.append(1 if is_pinned else 0)
+    if exclude_from_rag is not None:
+        updates.append("exclude_from_rag = ?")
+        values.append(1 if exclude_from_rag else 0)
+    if not updates:
+        return False
+
+    values.append(message_id)
+    with _lock:
+        with get_connection() as conn:
+            cursor = conn.execute(
+                f"UPDATE messages SET {', '.join(updates)} WHERE id = ?",
+                values
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+def delete_message(message_id: int) -> bool:
+    """Deletes a single message from memory and its cached embedding."""
+    with _lock:
+        with get_connection() as conn:
+            conn.execute("DELETE FROM message_embeddings WHERE message_id = ?", (message_id,))
+            cursor = conn.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+# --- Audit log ---
+
+def add_audit_event(event_type: str, status: str, summary: str, details: str = "") -> int:
+    """Adds an auditable action/proposal record."""
+    with _lock:
+        with get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO audit_log (event_type, status, summary, details) VALUES (?, ?, ?, ?)",
+                (event_type, status, summary, details)
+            )
+            conn.commit()
+            return int(cursor.lastrowid)
+
+def list_audit_events(limit: int = 200) -> List[Dict[str, Any]]:
+    """Returns latest audit events for UI inspection."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "SELECT * FROM audit_log ORDER BY timestamp DESC, id DESC LIMIT ?",
+            (limit,)
+        )
+        return [dict(row) for row in cursor.fetchall()]
 
 # Инициализируем БД при импорте модуля
 init_db()

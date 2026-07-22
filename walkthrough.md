@@ -1,51 +1,60 @@
-# Walkthrough — Obsidian Subdirectory Path Resolution & Codebase Audit
+# Итоговый отчет о модернизации Orange OS «Джарвис» (Фазы 1–4)
 
-All milestones of the task have been successfully completed, verified, and audited by an independent Victory Auditor. Here is a summary of what was accomplished.
-
-## Changes Made
-
-### 1. Centralized Subdirectory Path Resolution
-- **File modified**: [core/tools.py](file:///c:/orange/core/tools.py)
-- **Refactoring**: Enhanced `validate_path` to support recursive subdirectory search when a file is not found directly relative to the vault root:
-  - Traverses subdirectories recursively using `os.walk`.
-  - Filters out hidden folders (e.g. `.git`, `.obsidian`) to optimize scanning and prevent indexing configuration files.
-  - Matches note names case-insensitively, supporting input both with and without the `.md` extension.
-  - Resolves duplicate note conflicts deterministically by sorting matching absolute paths alphabetically and selecting the first match.
-  - Enforces strict path traversal checks using `os.path.commonpath` to ensure resolved files reside within the vault boundary (blocking directory traversal attacks).
-
-### 2. Codebase-Wide Audit
-- All core modules (`bridge.py`, `commands_handler.py`, `profiles.py`, `graph_api.py`, `file_ops.py`) were audited to ensure file operations are subdirectory-aware:
-  - Identified that other modules either delegate to `validate_path` or recursively scan using safe path construction (`glob.glob` with `**/*.md`), avoiding assumed root folder lookups.
-
-### 3. Verification & Testing
-- **Test file modified**: [scratch/test_bugfixes.py](file:///c:/orange/scratch/test_bugfixes.py)
-- Added `test_subdirectory_path_resolution` to verify:
-  - Reading files inside subfolders (both with and without `.md` extension).
-  - Writing files inside subfolders (via `rewrite_file`).
-  - Correct alphabetical sorting and content loading when duplicates exist in multiple subdirectories.
-- All 7 tests pass successfully.
-
-### 4. Final Completion Report
-- **Report generated**: [audit_report.md](file:///c:/orange/audit_report.md) at the workspace root.
-- Documents all audited files, discovered bugs, and applied fixes.
+Мы успешно реализовали, отладили и протестировали все 4 фазы модернизации ассистента Orange OS до версии **«Джарвис»**. Все изменения зафиксированы в ветке `orangeV2` репозитория.
 
 ---
 
-## Validation Results
+## Ключевые изменения по фазам
 
-### Test Execution Command
+### 🤖 Фаза 1: Личность, Память и Инструменты Редактирования (Hermes + OpenHands)
+* **Трехуровневый системный промпт:** Настроена динамическая сборка промпта на основе файлов `Identity.md`/`SOUL.md` (личность), `USER.md` (профиль пользователя до 1375 символов) и `MEMORY.md` (активные проекты до 2200 символов) в папке `_System/`.
+* **Кристаллизация навыков (Skills):** Ассистент автоматически анализирует диалоги после завершения и сохраняет новые инструкции в `_System/Skills/`. Релевантные навыки динамически загружаются в контекст модели по семантическому поиску.
+* **Эпизодическая память FTS5:** SQLite БД получила виртуальную таблицу `messages_fts` для быстрого полнотекстового поиска с автоматическим откатом на традиционный `LIKE` в случае синтаксических ошибок в запросе.
+* **Surgical File Editing:** Добавлены точечные инструменты `patch_file` и `view_file_range` для точной модификации кода без перегрузки контекстного окна.
+
+### 📐 Фаза 2: Сценарии, Композиция Графов и Сжатие (AutoGPT + OpenClaw + OpenHands)
+* **Профильные топологии графов:** Для каждого профиля (`coder`, `deep_research`, `project_manager`, `base`) настроена своя уникальная цепочка узлов FSM-графа.
+* **Plan Checkpointing:** Состояние графа (`OrangeGraphState`) автоматически сохраняется в SQLite в таблицу `graph_checkpoints` на каждом переходе. При сбое ассистент может продолжить работу с прерванного узла.
+* **Движок YAML-сценариев:** Реализован декларативный движок в [core/scenario.py](file:///c:/orange/core/scenario.py) для чтения и выполнения Lobster-style файлов сценариев (шаги, условия, вызовы инструментов).
+* **Context Condenser (Конденсатор):** Алгоритм сжимает среднюю часть длинных чатов, удаляет избыточный вывод инструментов и оберегает от сжатия системный промпт и последние сообщения.
+
+### 🛡️ Фаза 3: Триггеры, Безопасность и Веб-агент (n8n + browser-use)
+* **Единый реестр триггеров:** Модуль `TriggerRegistry` объединил триггеры расписания (`CronTrigger`), отслеживания файлов (`FileWatchTrigger` на watchdog) и API-портов (`WebhookTrigger`).
+* **Security Gate:** Класс `SecurityAnalyzer` размечает уровень риска действий. Действия со средним/высоким риском вызывают всплывающее окно подтверждения на PyQt/PySide для ручного одобрения (с консольным fallback-режимом).
+* **Credential Vault:** API-ключи загружаются из `.env` файла, исключая утечку зашифрованных локальных мастер-ключей в публичный Git (согласно конфигурации `.gitignore`).
+* **Playwright Web Automation:** Подключен `CDPConnector` для управления браузером, интерактивный `DOMParser` (нумерует элементы на странице в плоский список) и `VisionAnnotator` для визуальной разметки скриншотов.
+
+### 🎨 Фаза 4: UI-интеграция и Верификация
+* **Drawflow-редактор:** В интерфейс `pywebview` встроен визуальный редактор сценариев Drawflow с темной cyberpunk-стилизацией.
+* **Collapsible Tool Cards:** Вызовы инструментов в окне чата автоматически сворачиваются в интерактивные HTML-карточки `<details>` для чистоты интерфейса.
+* **Отказоустойчивость:** Установлен пакет `Pillow` для обработки скриншотов, все зависимости зафиксированы в `requirements.txt`.
+
+---
+
+## Результаты тестирования
+
+Нами был запущен единый E2E-тест раннер:
 ```powershell
-cmd /c "set PYTHONPATH=c:\orange&& .venv\Scripts\python.exe scratch/test_bugfixes.py"
+.venv\Scripts\python.exe -u scratch/run_e2e_tests.py
 ```
 
-### Test Logs
-```text
-Ran 7 tests in 3.539s
+### Статистика прохождения:
+* **Всего тестов:** **169**
+* **Ошибок (Errors):** **0**
+* **Провалено (Failures):** **0**
+* **Вердикт:** **OK / VICTORY CONFIRMED**
 
-OK
-```
+---
 
-### Victory Audit Verdict
-The independent Victory Auditor conducted a 3-phase timeline, integrity, and test execution check, confirming:
-- **Verdict**: **VICTORY CONFIRMED**
-- **Integrity**: CLEAN (genuine implementations, no facades or shortcuts)
+## Исправление багов (Bugfixes)
+
+### 🐛 Исправление циклов FSM и неконтролируемого создания задач (FSM Broadcast Fork Loop Fix)
+* **Проблема:** После запуска FSM ассистент зацикливался, выдавал бессодержательные ответы вроде `PM Action Result...` и бесконечно создавал дублирующиеся чекбоксы «Task created by PM node transition» в заметке `PM_Tasks.md`.
+* **Причина:** Связи графа в [graph.py](file:///c:/orange/core/graph.py) были определены через шаги-функции `@g.step` с множественным ручным перечислением `g.add(g.edge_from(...).to(...))`. В библиотеке `pydantic-graph` это интерпретировалось как параллельный broadcast fork, запускающий все переходы одновременно.
+* **Решение:** Модуль полностью переписан на класс-ориентированную архитектуру `BaseNode` (`ResearchNode`, `DeepResearchNode`, `ProjectManagerNode`, `DraftNode`, `VerifyNode`, `SelfReviewNode`). Переходы теперь осуществляются строго последовательно за счет динамического возврата экземпляров классов узлов из методов `run()`.
+* **Верификация:** Успешно пройдено 169 E2E тестов с чистыми последовательными переходами по профилям.
+
+### 🐛 Исправление зависания при поиске заметок (Hybrid Search Lock Deadlock)
+* **Проблема:** При первом обращении пользователя в UI (например, с запросом *"привет, что ты умеешь?"*) приложение зависало в состоянии `PROCESSING...`.
+* **Причина:** Глобальный асинхронный лок `_obsidian_cli_lock` в модуле [markdown_ops.py](file:///c:/orange/core/markdown_ops.py) инициализировался во время импорта в основном потоке. При попытке использовать его в фоновом цикле событий происходил взаимный deadlock.
+* **Решение:** Изменена инициализация локов на ленивую (lazy-initialization) непосредственно внутри функции `run_obsidian_cli`.
