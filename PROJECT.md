@@ -26,6 +26,7 @@ The architecture is structured as follows:
 | 3 | M3: UI Overlay Audit | Panic overlay, async Future command override, sanitized Markdown rendering | M2 | IMPLEMENTED |
 | 4 | M4: Validation | Unit tests, CI, restricted executor checks | M3 | IN PROGRESS |
 | 5 | M5: Product Controls | Memory Editor, Smart Inbox, Knowledge Graph v2, Morning Dashboard | M4 | IMPLEMENTED |
+| 6 | M6: Trust Layer | Diff preview, Project Pages, Weekly Review, Audit Log | M5 | IMPLEMENTED |
 
 ## Interface Contracts
 ### Obsidian API Endpoint (`/query`)
@@ -51,6 +52,13 @@ The architecture is structured as follows:
 
 ### Morning Dashboard
 - `api_get_morning_dashboard()`
+
+### Trust Layer
+- `api_get_project_pages_preview()`
+- `api_apply_project_pages()`
+- `api_get_weekly_review_preview()`
+- `api_apply_weekly_review()`
+- `api_get_audit_log(limit)`
 
 ### JS Bridge / System Panics
 - **Method**: `window.pywebview.api.trigger_panic(msg)` or evaluate JS: `triggerSystemPanic(msg)`

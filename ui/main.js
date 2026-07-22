@@ -98,6 +98,8 @@ let cachedHttpBaseUrl = null;
 let smartInboxProposals = [];
 let lastGraphData = null;
 let currentGraphFilter = 'all';
+let projectPagesPreview = null;
+let weeklyReviewPreview = null;
 
 // DOM Elements
 const inputEl = document.getElementById('user-input');
@@ -112,6 +114,9 @@ const commandPaletteCommands = [
     { id: 'morning-dashboard', label: 'MORNING_DASHBOARD', hint: 'Open daily operating view', run: () => openMorningDashboard() },
     { id: 'memory-editor', label: 'MEMORY_EDITOR', hint: 'Review pinned and RAG-excluded memory', run: () => openMemoryEditor() },
     { id: 'smart-inbox', label: 'SMART_INBOX', hint: 'Review inbox proposals', run: () => openSmartInbox() },
+    { id: 'project-pages', label: 'PROJECT_PAGES', hint: 'Build project overview pages with diff preview', run: () => openProjectPages() },
+    { id: 'weekly-review', label: 'WEEKLY_REVIEW', hint: 'Generate this week review with diff preview', run: () => openWeeklyReview() },
+    { id: 'audit-log', label: 'AUDIT_LOG', hint: 'Open command and write history', run: () => openAuditLog() },
     { id: 'telemetry', label: 'TOGGLE_TELEMETRY', hint: 'Open or close system telemetry', run: () => toggleTelemetry() },
     { id: 'settings', label: 'OPEN_SETTINGS', hint: 'Open global settings', run: () => openSettings() },
     { id: 'backup', label: 'RUN_LOCAL_BACKUP', hint: 'Manual local vault backup', run: () => runManualBackup() },
@@ -1095,6 +1100,129 @@ function renderMorningDashboard(dashboard) {
     ].join('');
 }
 
+async function openProjectPages() {
+    if (!window.pywebview) return;
+    openModal('project-pages-modal');
+    const content = document.getElementById('project-pages-content');
+    if (content) content.innerHTML = '<div class="p-3 text-primary font-label-mono text-[11px]">BUILDING_PROJECT_PAGE_DIFFS...</div>';
+    try {
+        projectPagesPreview = JSON.parse(await window.pywebview.api.api_get_project_pages_preview());
+        if (projectPagesPreview.status !== 'success') throw new Error(projectPagesPreview.message || 'Project preview failed');
+        renderProjectPages(projectPagesPreview);
+    } catch(e) {
+        if (content) content.innerHTML = `<div class="p-3 text-error font-label-mono text-[11px]">${escapeHTML(e.toString())}</div>`;
+    }
+}
+
+function renderProjectPages(preview) {
+    const content = document.getElementById('project-pages-content');
+    if (!content) return;
+    const plans = preview.plans || [];
+    if (!plans.length) {
+        content.innerHTML = '<div class="p-3 text-on-surface-variant font-label-mono text-[11px]">NO_PROJECT_PAGES_FOUND</div>';
+        return;
+    }
+    content.innerHTML = plans.map((plan, index) => `
+        <section class="border border-outline p-3 bg-black/30">
+            <div class="flex items-center justify-between gap-3 border-b border-outline pb-2 mb-2">
+                <div class="font-label-mono text-[10px] text-primary break-words">${escapeHTML(plan.relative_path || plan.path || '')}</div>
+                <span class="font-label-mono text-[10px] text-on-surface-variant">PLAN_${index + 1}</span>
+            </div>
+            <pre class="whitespace-pre-wrap break-words text-[11px] leading-relaxed max-h-64 overflow-y-auto">${escapeHTML(plan.diff || '')}</pre>
+        </section>
+    `).join('');
+}
+
+async function applyProjectPages() {
+    if (!window.pywebview || !confirm('Apply generated Project Pages to vault?')) return;
+    try {
+        const result = JSON.parse(await window.pywebview.api.api_apply_project_pages());
+        if (result.status !== 'success') throw new Error(result.message || 'Apply failed');
+        closeModal('project-pages-modal');
+        appendMessage('Project Pages', result.message, 'sys');
+        await openAuditLog();
+    } catch(e) {
+        appendMessage('Project Pages', `Apply failed: ${e.toString()}`, 'sys');
+    }
+}
+
+async function openWeeklyReview() {
+    if (!window.pywebview) return;
+    openModal('weekly-review-modal');
+    const content = document.getElementById('weekly-review-content');
+    if (content) content.innerHTML = '<div class="p-3 text-primary font-label-mono text-[11px]">BUILDING_WEEKLY_REVIEW_DIFF...</div>';
+    try {
+        weeklyReviewPreview = JSON.parse(await window.pywebview.api.api_get_weekly_review_preview());
+        if (weeklyReviewPreview.status !== 'success') throw new Error(weeklyReviewPreview.message || 'Weekly preview failed');
+        renderWeeklyReview(weeklyReviewPreview);
+    } catch(e) {
+        if (content) content.innerHTML = `<div class="p-3 text-error font-label-mono text-[11px]">${escapeHTML(e.toString())}</div>`;
+    }
+}
+
+function renderWeeklyReview(preview) {
+    const content = document.getElementById('weekly-review-content');
+    if (!content) return;
+    const plan = preview.plan || {};
+    content.innerHTML = `
+        <section class="border border-outline p-3 bg-black/30">
+            <div class="flex items-center justify-between gap-3 border-b border-outline pb-2 mb-2">
+                <div class="font-label-mono text-[10px] text-primary break-words">${escapeHTML(plan.relative_path || '')}</div>
+                <span class="font-label-mono text-[10px] text-on-surface-variant">${escapeHTML(preview.week || '')}</span>
+            </div>
+            <pre class="whitespace-pre-wrap break-words text-[11px] leading-relaxed max-h-[54vh] overflow-y-auto">${escapeHTML(plan.diff || '')}</pre>
+        </section>
+    `;
+}
+
+async function applyWeeklyReview() {
+    if (!window.pywebview || !confirm('Write this Weekly Review to vault?')) return;
+    try {
+        const result = JSON.parse(await window.pywebview.api.api_apply_weekly_review());
+        if (result.status !== 'success') throw new Error(result.message || 'Apply failed');
+        closeModal('weekly-review-modal');
+        appendMessage('Weekly Review', result.message, 'sys');
+        await openAuditLog();
+    } catch(e) {
+        appendMessage('Weekly Review', `Apply failed: ${e.toString()}`, 'sys');
+    }
+}
+
+async function openAuditLog() {
+    if (!window.pywebview) return;
+    openModal('audit-log-modal');
+    const list = document.getElementById('audit-log-list');
+    if (list) list.innerHTML = '<div class="p-3 text-primary font-label-mono text-[11px]">LOADING_AUDIT_LOG...</div>';
+    try {
+        const payload = JSON.parse(await window.pywebview.api.api_get_audit_log(300));
+        if (payload.status !== 'success') throw new Error(payload.message || 'Audit load failed');
+        renderAuditLog(payload.items || []);
+    } catch(e) {
+        if (list) list.innerHTML = `<div class="p-3 text-error font-label-mono text-[11px]">${escapeHTML(e.toString())}</div>`;
+    }
+}
+
+function renderAuditLog(items) {
+    const list = document.getElementById('audit-log-list');
+    if (!list) return;
+    if (!items.length) {
+        list.innerHTML = '<div class="p-3 text-on-surface-variant font-label-mono text-[11px]">NO_AUDIT_EVENTS</div>';
+        return;
+    }
+    list.innerHTML = items.map(item => `
+        <section class="border border-outline p-3 bg-black/30">
+            <div class="flex flex-wrap items-center gap-2 border-b border-outline pb-2 mb-2">
+                <span class="text-primary font-label-mono text-[10px]">#${escapeHTML(item.id)}</span>
+                <span class="border border-primary text-primary px-2 py-0.5 font-label-mono text-[10px]">${escapeHTML(item.event_type || '')}</span>
+                <span class="border border-outline text-on-surface px-2 py-0.5 font-label-mono text-[10px]">${escapeHTML(item.status || '')}</span>
+                <span class="text-on-surface-variant font-label-mono text-[10px]">${escapeHTML(item.timestamp || '')}</span>
+            </div>
+            <div class="font-body-sm text-body-sm text-on-surface break-words mb-2">${escapeHTML(item.summary || '')}</div>
+            ${item.details ? `<pre class="whitespace-pre-wrap break-words text-[10px] leading-relaxed max-h-40 overflow-y-auto text-on-surface-variant">${escapeHTML(item.details.slice(0, 6000))}</pre>` : ''}
+        </section>
+    `).join('');
+}
+
 // System Panic & Command Override
 function triggerSystemPanic(errorText) {
     const textEl = document.getElementById('system-panic-text');
@@ -1235,6 +1363,11 @@ window.openSmartInbox = openSmartInbox;
 window.addSmartInboxProposal = addSmartInboxProposal;
 window.applyInboxProposalByIndex = applyInboxProposalByIndex;
 window.openMorningDashboard = openMorningDashboard;
+window.openProjectPages = openProjectPages;
+window.applyProjectPages = applyProjectPages;
+window.openWeeklyReview = openWeeklyReview;
+window.applyWeeklyReview = applyWeeklyReview;
+window.openAuditLog = openAuditLog;
 
 // Localization dynamic switcher
 let i18nData = null;

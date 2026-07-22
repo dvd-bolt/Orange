@@ -22,7 +22,8 @@
 - Python bridge and agent: `core/bridge.py`, `core/agent.py`, `core/graph.py`
 - Services: `core/services/chat_service.py`, `settings_service.py`,
   `attachment_service.py`, `agent_runner.py`, `inbox_service.py`,
-  `dashboard_service.py`
+  `dashboard_service.py`, `project_pages_service.py`,
+  `weekly_review_service.py`, `write_preview_service.py`
 - Storage: SQLite through `core/db.py`
 - Vault search: BM25 plus optional Gemini embeddings
 - HTTP API: local `ThreadingHTTPServer` bound from `ORANGE_PORT`, exposing
@@ -39,6 +40,11 @@
 - Knowledge Graph v2 enriches nodes with path, type, degree, orphan status, and
   suggested wikilinks.
 - Morning Dashboard scans Markdown tasks and graph metadata for a daily view.
+- Project Pages generates overview pages under `_Orange/Project Pages/`.
+- Weekly Review generates one report under `_Orange/Reviews/` for the current
+  ISO week.
+- Write Preview builds unified diffs before applying vault writes.
+- Audit Log is stored in SQLite through `core/db.py`.
 
 ## Defaults
 

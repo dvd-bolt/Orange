@@ -7,7 +7,9 @@ from core.services.attachment_service import AttachmentService
 from core.services.chat_service import ChatService
 from core.services.dashboard_service import DashboardService
 from core.services.inbox_service import InboxService
+from core.services.project_pages_service import ProjectPagesService
 from core.services.settings_service import SettingsService
+from core.services.weekly_review_service import WeeklyReviewService
 
 import functools
 import json
@@ -40,6 +42,8 @@ class BridgeAPI:
         self._attachment_service = AttachmentService()
         self._inbox_service = InboxService(deps.obsidian_vault_path)
         self._dashboard_service = DashboardService(deps.obsidian_vault_path)
+        self._project_pages_service = ProjectPagesService(deps.obsidian_vault_path)
+        self._weekly_review_service = WeeklyReviewService(deps.obsidian_vault_path)
         self._agent_runner = AgentRunner(
             background_loop,
             deps,
@@ -225,8 +229,11 @@ class BridgeAPI:
             self._background_loop
         )
         try:
-            return json.dumps(future.result())
+            result = future.result()
+            db.add_audit_event("git_backup", result.get("status", "unknown"), result.get("message", "Manual local backup"))
+            return json.dumps(result)
         except Exception as e:
+            db.add_audit_event("git_backup", "error", str(e))
             return json.dumps({"status": "error", "message": str(e)})
 
     def api_get_mcp_status(self) -> str:
@@ -255,6 +262,8 @@ class BridgeAPI:
                 is_pinned=coerce(is_pinned),
                 exclude_from_rag=coerce(exclude_from_rag),
             )
+            if ok:
+                db.add_audit_event("memory", "applied", f"Updated memory item {message_id}")
             return json.dumps({"status": "success" if ok else "error", "message": "updated" if ok else "message not found"})
         except Exception as e:
             return json.dumps({"status": "error", "message": str(e)})
@@ -263,6 +272,8 @@ class BridgeAPI:
         """Deletes a single message from memory."""
         try:
             ok = db.delete_message(int(message_id))
+            if ok:
+                db.add_audit_event("memory", "applied", f"Deleted memory item {message_id}")
             return json.dumps({"status": "success" if ok else "error", "message": "deleted" if ok else "message not found"})
         except Exception as e:
             return json.dumps({"status": "error", "message": str(e)})
@@ -273,6 +284,7 @@ class BridgeAPI:
             return
         try:
             proposal = self._inbox_service.build_proposal(file_path)
+            db.add_audit_event("smart_inbox", "proposed", f"Proposal for {proposal.get('relative_path', file_path)}", json.dumps(proposal))
             self._window.evaluate_js(f"addSmartInboxProposal({json.dumps(proposal)})")
         except Exception as e:
             payload = {"status": "error", "file_path": file_path, "filename": file_path, "message": str(e)}
@@ -290,8 +302,11 @@ class BridgeAPI:
             self._background_loop,
         )
         try:
-            return json.dumps(future.result())
+            result = future.result()
+            db.add_audit_event("smart_inbox", result.get("status", "unknown"), result.get("message", "Applied inbox proposal"), json.dumps(result))
+            return json.dumps(result)
         except Exception as e:
+            db.add_audit_event("smart_inbox", "error", str(e))
             return json.dumps({"status": "error", "message": str(e)})
 
     def api_get_morning_dashboard(self) -> str:
@@ -299,6 +314,46 @@ class BridgeAPI:
             return json.dumps({"status": "success", "dashboard": self._dashboard_service.build_morning_dashboard()})
         except Exception as e:
             return json.dumps({"status": "error", "message": str(e)})
+
+    def api_get_project_pages_preview(self) -> str:
+        try:
+            return json.dumps(self._project_pages_service.preview_project_pages())
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e), "plans": []})
+
+    def api_apply_project_pages(self) -> str:
+        future = asyncio.run_coroutine_threadsafe(
+            self._project_pages_service.apply_project_pages(),
+            self._background_loop,
+        )
+        try:
+            return json.dumps(future.result())
+        except Exception as e:
+            db.add_audit_event("project_pages", "error", str(e))
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def api_get_weekly_review_preview(self) -> str:
+        try:
+            return json.dumps(self._weekly_review_service.preview_weekly_review())
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def api_apply_weekly_review(self) -> str:
+        future = asyncio.run_coroutine_threadsafe(
+            self._weekly_review_service.apply_weekly_review(),
+            self._background_loop,
+        )
+        try:
+            return json.dumps(future.result())
+        except Exception as e:
+            db.add_audit_event("weekly_review", "error", str(e))
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def api_get_audit_log(self, limit: int = 200) -> str:
+        try:
+            return json.dumps({"status": "success", "items": db.list_audit_events(int(limit))})
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e), "items": []})
 
     def api_handle_override_response(self, approved: bool):
         """Вызывается из JS при клике на Permit/Deny в окне подтверждения команды"""
@@ -315,13 +370,12 @@ class BridgeAPI:
             return False
 
         self._override_future = self._background_loop.create_future()
-        safe_cmd = command.replace('\\', '\\\\').replace('`', '\\`').replace('$', '\\$')
-        
-        # Показываем оверлей в JS
-        self._window.evaluate_js(f"showExecutionOverride(`{safe_cmd}`)")
+        self._window.evaluate_js(f"showExecutionOverride({json.dumps(command)})")
         
         try:
             approved = await self._override_future
+            status = "approved" if approved else "denied"
+            db.add_audit_event("approval", status, "Execution/write approval response", command)
             return approved
         except Exception as e:
             print(f"[Bridge Error] Ошибка ожидания подтверждения: {e}")

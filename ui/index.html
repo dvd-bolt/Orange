@@ -119,6 +119,15 @@
                     <button onclick="openSmartInbox()" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-2 py-1.5 hover:border-primary" title="Smart Inbox">
                         <span class="material-symbols-outlined text-[16px]">inbox</span>
                     </button>
+                    <button onclick="openProjectPages()" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-2 py-1.5 hover:border-primary" title="Project Pages">
+                        <span class="material-symbols-outlined text-[16px]">account_tree</span>
+                    </button>
+                    <button onclick="openWeeklyReview()" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-2 py-1.5 hover:border-primary" title="Weekly Review">
+                        <span class="material-symbols-outlined text-[16px]">event_note</span>
+                    </button>
+                    <button onclick="openAuditLog()" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-2 py-1.5 hover:border-primary" title="Audit Log">
+                        <span class="material-symbols-outlined text-[16px]">receipt_long</span>
+                    </button>
                     <!-- Knowledge Graph Button -->
                     <button onclick="toggleKnowledgeGraph()" id="btn-knowledge-graph" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-3 py-1.5 hover:border-primary">
                         <span class="material-symbols-outlined text-[16px]">schema</span>
@@ -430,6 +439,45 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
                 <button onclick="closeModal('morning-dashboard-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
             </div>
             <div id="morning-dashboard-content" class="overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-3 pr-1"></div>
+        </div>
+    </div>
+
+    <!-- PROJECT_PAGES Modal -->
+    <div id="project-pages-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
+        <div class="w-full max-w-5xl max-h-[84vh] border border-outline-variant p-6 bg-surface flex flex-col gap-4 relative">
+            <div class="flex justify-between items-center border-b border-outline-variant pb-2">
+                <h2 class="font-label-caps text-label-caps text-primary">[PROJECT_PAGES_DIFF_PREVIEW]</h2>
+                <button onclick="closeModal('project-pages-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+            </div>
+            <div id="project-pages-content" class="overflow-y-auto space-y-3 pr-1"></div>
+            <div class="flex justify-end">
+                <button onclick="applyProjectPages()" class="border border-primary text-primary hover:bg-primary hover:text-on-primary px-4 py-2 font-label-caps text-label-caps">APPLY_PROJECT_PAGES</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- WEEKLY_REVIEW Modal -->
+    <div id="weekly-review-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
+        <div class="w-full max-w-5xl max-h-[84vh] border border-outline-variant p-6 bg-surface flex flex-col gap-4 relative">
+            <div class="flex justify-between items-center border-b border-outline-variant pb-2">
+                <h2 class="font-label-caps text-label-caps text-primary">[WEEKLY_REVIEW_DIFF_PREVIEW]</h2>
+                <button onclick="closeModal('weekly-review-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+            </div>
+            <div id="weekly-review-content" class="overflow-y-auto space-y-3 pr-1"></div>
+            <div class="flex justify-end">
+                <button onclick="applyWeeklyReview()" class="border border-primary text-primary hover:bg-primary hover:text-on-primary px-4 py-2 font-label-caps text-label-caps">WRITE_WEEKLY_REVIEW</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AUDIT_LOG Modal -->
+    <div id="audit-log-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
+        <div class="w-full max-w-5xl max-h-[84vh] border border-outline-variant p-6 bg-surface flex flex-col gap-4 relative">
+            <div class="flex justify-between items-center border-b border-outline-variant pb-2">
+                <h2 class="font-label-caps text-label-caps text-primary">[AUDIT_LOG]</h2>
+                <button onclick="closeModal('audit-log-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+            </div>
+            <div id="audit-log-list" class="overflow-y-auto space-y-2 pr-1"></div>
         </div>
     </div>
 

@@ -93,7 +93,7 @@ def fetch_website_fast(url: str) -> str:
     except Exception as e:
         return f"{_rust_build_hint()}\nОшибка сети: {e}"
 
-from core.file_ops import atomic_write_obsidian_note
+from core.services.write_preview_service import WritePreviewService, confirm_and_apply_plan
 
 async def rewrite_file(ctx: RunContext[OrangeDeps], file_path: str, content: str) -> str:
     """
@@ -101,13 +101,20 @@ async def rewrite_file(ctx: RunContext[OrangeDeps], file_path: str, content: str
     Использует временные файлы и механизм retry для обхода блокировок iCloud.
     """
     try:
-        valid_path = validate_path(ctx.deps.obsidian_vault_path, file_path)
-        await atomic_write_obsidian_note(valid_path, content)
+        preview = WritePreviewService(ctx.deps.obsidian_vault_path)
+        plan = preview.build_plan(file_path, content, action="rewrite_file")
+        approved = await confirm_and_apply_plan(
+            ctx.deps,
+            plan,
+            "vault_write",
+            f"Rewrite note {plan['relative_path']}",
+        )
+        if not approved:
+            return "Отклонено: файл не был изменен."
         return "Успех: файл перезаписан"
     except Exception as e:
         return f"Ошибка: {str(e)}"
 
-import aiofiles
 from core.markdown_ops import append_task_to_markdown
 
 async def add_task(ctx: RunContext, file_path: str, task: str) -> str:
@@ -133,16 +140,24 @@ async def add_task(ctx: RunContext, file_path: str, task: str) -> str:
             
         # Чтение файла, если он существует, иначе создаем шаблон
         if os.path.exists(full_path):
-            async with aiofiles.open(full_path, mode='r', encoding='utf-8') as f:
-                content = await f.read()
+            with open(full_path, "r", encoding="utf-8", errors="ignore") as file:
+                content = file.read()
         else:
-            content = "# Задачи\n\n"
+            content = "# Tasks\n\n"
             
         # Парсинг и модификация
         new_content = append_task_to_markdown(content, task)
         
-        # Безопасное сохранение
-        await atomic_write_obsidian_note(full_path, new_content)
+        preview = WritePreviewService(ctx.deps.obsidian_vault_path)
+        plan = preview.build_plan(full_path, new_content, action="add_task")
+        approved = await confirm_and_apply_plan(
+            ctx.deps,
+            plan,
+            "vault_write",
+            f"Add task to {plan['relative_path']}",
+        )
+        if not approved:
+            return "Отклонено: задача не была добавлена."
         
         return "Успех: задача добавлена в файл"
     except Exception as e:
@@ -297,7 +312,6 @@ async def search_memory(ctx: RunContext, query: str) -> str:
 async def export_active_chat(chat_id: str, deps) -> str:
     """Функция экспорта чата (вызывается напрямую из bridge.py, не как инструмент агента)"""
     from core import db
-    from core.file_ops import atomic_write_obsidian_note
     import uuid
     
     history = db.get_chat_history(chat_id)
@@ -323,8 +337,17 @@ async def export_active_chat(chat_id: str, deps) -> str:
     obsidian_root = deps.obsidian_vault_path
     target_path = os.path.join(obsidian_root, "04-projects", filename)
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
-    
-    await atomic_write_obsidian_note(target_path, markdown_result)
+
+    preview = WritePreviewService(deps.obsidian_vault_path)
+    plan = preview.build_plan(target_path, markdown_result, action="export_chat")
+    approved = await confirm_and_apply_plan(
+        deps,
+        plan,
+        "vault_write",
+        f"Export active chat to {plan['relative_path']}",
+    )
+    if not approved:
+        return "Отклонено: экспорт не был записан."
     return f"Успех! Чат экспортирован в {target_path}"
 
 # --- ИНСТРУМЕНТЫ DEEP RESEARCH (OSINT) ---
@@ -897,8 +920,16 @@ async def expand_note_links(ctx: RunContext[OrangeDeps], file_path: str) -> str:
             
     if len(appendix) > 1:
         new_content = content + "\n" + "\n".join(appendix)
-        from core.file_ops import atomic_write_obsidian_note
-        await atomic_write_obsidian_note(valid_path, new_content)
+        preview = WritePreviewService(ctx.deps.obsidian_vault_path)
+        plan = preview.build_plan(valid_path, new_content, action="expand_note_links")
+        approved = await confirm_and_apply_plan(
+            ctx.deps,
+            plan,
+            "vault_write",
+            f"Expand links in {plan['relative_path']}",
+        )
+        if not approved:
+            return "Отклонено: заметка не была изменена."
         return f"Успешно раскрыто {len(appendix) - 1} ссылок(и) и добавлено в конец заметки."
         
     return "Не удалось раскрыть ссылки в заметке."

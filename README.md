@@ -72,3 +72,7 @@ working more slowly and report the build command in tool output.
 - Smart Inbox: classifies `_Inbox` notes and applies changes only after confirmation
 - Knowledge Graph v2: filters, clickable nodes, note previews, wikilink suggestions
 - Morning Dashboard: today tasks, overdue tasks, Telegram tasks, orphan notes, focus list
+- Diff Preview: vault writes show a unified diff before agent/tool changes are applied
+- Project Pages: generated `_Orange/Project Pages/` summaries for project notes
+- Weekly Review: generated `_Orange/Reviews/` weekly vault report
+- Audit Log: local action history for proposals, approvals, writes, backups, and memory edits

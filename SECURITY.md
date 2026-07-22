@@ -40,6 +40,19 @@ The watcher no longer runs background vault modifications after each inbox file
 change. It sends a proposal to the UI, and `InboxService.apply_proposal` writes
 only after user confirmation.
 
+## Diff Preview Before Writes
+
+Agent tools that rewrite notes, add tasks, export chats, or expand note links
+build a unified diff first and request explicit UI approval before applying the
+write. Generated Project Pages and Weekly Reviews are also shown as diff
+previews in the UI before writing to `_Orange/`.
+
+## Audit Log
+
+`audit_log` in SQLite records proposals, approvals, denials, applied writes,
+manual backups, memory edits, Smart Inbox actions, Project Pages, and Weekly
+Review exports. It is available from the Audit Log UI.
+
 ## Memory Controls
 
 Memory Editor can mark messages as `exclude_from_rag`. Those messages remain in

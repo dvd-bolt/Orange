@@ -61,6 +61,16 @@ def init_db():
                     last_modified REAL
                 )
             ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT,
+                    status TEXT,
+                    summary TEXT,
+                    details TEXT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             conn.commit()
 
 # --- CRUD для чатов ---
@@ -211,6 +221,28 @@ def delete_message(message_id: int) -> bool:
             cursor = conn.execute("DELETE FROM messages WHERE id = ?", (message_id,))
             conn.commit()
             return cursor.rowcount > 0
+
+# --- Audit log ---
+
+def add_audit_event(event_type: str, status: str, summary: str, details: str = "") -> int:
+    """Adds an auditable action/proposal record."""
+    with _lock:
+        with get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO audit_log (event_type, status, summary, details) VALUES (?, ?, ?, ?)",
+                (event_type, status, summary, details)
+            )
+            conn.commit()
+            return int(cursor.lastrowid)
+
+def list_audit_events(limit: int = 200) -> List[Dict[str, Any]]:
+    """Returns latest audit events for UI inspection."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "SELECT * FROM audit_log ORDER BY timestamp DESC, id DESC LIMIT ?",
+            (limit,)
+        )
+        return [dict(row) for row in cursor.fetchall()]
 
 # Инициализируем БД при импорте модуля
 init_db()

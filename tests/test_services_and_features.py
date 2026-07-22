@@ -73,6 +73,75 @@ def test_dashboard_service_builds_daily_snapshot(tmp_path):
     assert dashboard["focus"]
 
 
+def test_audit_log_crud_uses_temp_database(tmp_path, monkeypatch):
+    from core import db
+
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "orange_memory.db"))
+    db.init_db()
+    event_id = db.add_audit_event("test", "proposed", "summary", "details")
+
+    events = db.list_audit_events()
+    assert events[0]["id"] == event_id
+    assert events[0]["event_type"] == "test"
+    assert events[0]["details"] == "details"
+
+
+def test_write_preview_service_builds_diff_and_applies(tmp_path):
+    from core.services.write_preview_service import WritePreviewService
+
+    service = WritePreviewService(str(tmp_path))
+    (tmp_path / "note.md").write_text("old\n", encoding="utf-8")
+
+    plan = service.build_plan("note.md", "new\n", action="test")
+    assert "--- a/note.md" in plan["diff"]
+    assert "+++ b/note.md" in plan["diff"]
+    assert "-old" in plan["diff"]
+    assert "+new" in plan["diff"]
+
+    asyncio.run(service.apply_plan(plan))
+    assert (tmp_path / "note.md").read_text(encoding="utf-8") == "new\n"
+
+
+def test_project_pages_service_previews_and_applies(tmp_path, monkeypatch):
+    from core import db
+    from core.services.project_pages_service import ProjectPagesService
+
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "orange_memory.db"))
+    db.init_db()
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    (projects / "roadmap.md").write_text("# Roadmap\n- [ ] Ship feature\nQuestion?\n", encoding="utf-8")
+
+    service = ProjectPagesService(str(tmp_path))
+    preview = service.preview_project_pages()
+    assert preview["status"] == "success"
+    assert preview["count"] == 1
+    assert any("Project Pages" in plan["relative_path"] for plan in preview["plans"])
+
+    result = asyncio.run(service.apply_project_pages())
+    assert result["status"] == "success"
+    assert (tmp_path / "_Orange" / "Project Pages" / "Roadmap.md").exists()
+
+
+def test_weekly_review_service_previews_and_applies(tmp_path, monkeypatch):
+    from core import db
+    from core.services.weekly_review_service import WeeklyReviewService
+
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "orange_memory.db"))
+    db.init_db()
+    (tmp_path / "daily.md").write_text("- [ ] Follow up 2020-01-01\n- [x] Done task\n", encoding="utf-8")
+
+    service = WeeklyReviewService(str(tmp_path))
+    preview = service.preview_weekly_review()
+    assert preview["status"] == "success"
+    assert "Weekly Review" in preview["plan"]["relative_path"]
+    assert "Overdue" in preview["plan"]["new_content"]
+
+    result = asyncio.run(service.apply_weekly_review())
+    assert result["status"] == "success"
+    assert (tmp_path / "_Orange" / "Reviews").exists()
+
+
 def test_bridge_public_api_contract_includes_new_methods():
     pytest.importorskip("pydantic_ai")
     from core.bridge import BridgeAPI
@@ -89,6 +158,11 @@ def test_bridge_public_api_contract_includes_new_methods():
         "api_apply_inbox_proposal",
         "api_get_morning_dashboard",
         "api_get_http_base_url",
+        "api_get_project_pages_preview",
+        "api_apply_project_pages",
+        "api_get_weekly_review_preview",
+        "api_apply_weekly_review",
+        "api_get_audit_log",
     }
 
     missing = [name for name in expected_methods if not hasattr(BridgeAPI, name)]
