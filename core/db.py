@@ -15,6 +15,12 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+def _ensure_column(conn, table_name: str, column_name: str, definition: str):
+    cursor = conn.execute(f"PRAGMA table_info({table_name})")
+    existing_columns = {row["name"] for row in cursor.fetchall()}
+    if column_name not in existing_columns:
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+
 def init_db():
     """Создает таблицы, если они не существуют"""
     with _lock:
@@ -34,9 +40,13 @@ def init_db():
                     role TEXT,
                     content TEXT,
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_pinned BOOLEAN DEFAULT 0,
+                    exclude_from_rag BOOLEAN DEFAULT 0,
                     FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
                 )
             ''')
+            _ensure_column(conn, "messages", "is_pinned", "BOOLEAN DEFAULT 0")
+            _ensure_column(conn, "messages", "exclude_from_rag", "BOOLEAN DEFAULT 0")
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS message_embeddings (
                     message_id INTEGER PRIMARY KEY,
@@ -113,11 +123,11 @@ def delete_chat(chat_id: str) -> bool:
 
 # --- CRUD для сообщений ---
 
-def add_message(chat_id: str, role: str, content: str):
+def add_message(chat_id: str, role: str, content: str) -> int:
     """Добавляет сообщение в чат и обновляет время чата"""
     with _lock:
         with get_connection() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 "INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
                 (chat_id, role, content)
             )
@@ -126,6 +136,7 @@ def add_message(chat_id: str, role: str, content: str):
                 (chat_id,)
             )
             conn.commit()
+            return int(cursor.lastrowid)
 
 def get_chat_history(chat_id: str) -> List[Dict[str, Any]]:
     """Возвращает историю сообщений конкретного чата"""
@@ -149,6 +160,57 @@ def search_messages(query: str) -> List[Dict[str, Any]]:
             (search_term,)
         )
         return [dict(row) for row in cursor.fetchall()]
+
+def list_memory_messages(limit: int = 200) -> List[Dict[str, Any]]:
+    """Returns recent messages with memory flags for Memory Editor."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            '''SELECT m.id, m.chat_id, m.role, m.content, m.timestamp,
+                      m.is_pinned, m.exclude_from_rag, c.title
+               FROM messages m
+               JOIN chats c ON m.chat_id = c.id
+               WHERE m.content IS NOT NULL AND TRIM(m.content) != ''
+               ORDER BY m.is_pinned DESC, m.timestamp DESC
+               LIMIT ?''',
+            (limit,)
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+def update_message_memory_flags(
+    message_id: int,
+    is_pinned: Optional[bool] = None,
+    exclude_from_rag: Optional[bool] = None,
+) -> bool:
+    """Updates Memory Editor flags on a message."""
+    updates = []
+    values = []
+    if is_pinned is not None:
+        updates.append("is_pinned = ?")
+        values.append(1 if is_pinned else 0)
+    if exclude_from_rag is not None:
+        updates.append("exclude_from_rag = ?")
+        values.append(1 if exclude_from_rag else 0)
+    if not updates:
+        return False
+
+    values.append(message_id)
+    with _lock:
+        with get_connection() as conn:
+            cursor = conn.execute(
+                f"UPDATE messages SET {', '.join(updates)} WHERE id = ?",
+                values
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+def delete_message(message_id: int) -> bool:
+    """Deletes a single message from memory and its cached embedding."""
+    with _lock:
+        with get_connection() as conn:
+            conn.execute("DELETE FROM message_embeddings WHERE message_id = ?", (message_id,))
+            cursor = conn.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+            conn.commit()
+            return cursor.rowcount > 0
 
 # Инициализируем БД при импорте модуля
 init_db()

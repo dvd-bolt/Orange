@@ -22,7 +22,7 @@ def run_git_command_sync(cwd: str, args: list[str]) -> tuple[int, str, str]:
 
 _backup_thread_lock = threading.Lock()
 
-def _sync_git_backup(vault_path: str) -> dict:
+def _sync_git_backup(vault_path: str, push: bool = False) -> dict:
     """Synchronous core for git backup, protected by thread lock."""
     with _backup_thread_lock:
         vault_path = os.path.abspath(vault_path)
@@ -79,7 +79,10 @@ def _sync_git_backup(vault_path: str) -> dict:
 
         print(f"[GitBackup] Committed successfully: {commit_msg}")
 
-        # 5. Check if remote exists
+        if not push:
+            return {"status": "success_local_only", "message": "Committed changes locally. Auto-push is disabled."}
+
+        # 5. Check if remote exists and explicit push was requested
         code, out, err = run_git_command_sync(vault_path, ["remote"])
         if code == 0 and out.strip():
             # Get current branch name
@@ -98,9 +101,9 @@ def _sync_git_backup(vault_path: str) -> dict:
                 
         return {"status": "success_local_only", "message": "Committed changes locally. No remote configured."}
 
-async def auto_backup_vault(vault_path: str) -> dict:
+async def auto_backup_vault(vault_path: str, push: bool = False) -> dict:
     """
-    Initializes git if needed, stages all files, commits changes, and pushes if remote is set.
+    Initializes git if needed, stages all files, commits changes, and pushes only when explicitly requested.
     """
     # Offload synchronous execution to a separate thread
-    return await asyncio.to_thread(_sync_git_backup, vault_path)
+    return await asyncio.to_thread(_sync_git_backup, vault_path, push)

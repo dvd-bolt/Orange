@@ -47,7 +47,7 @@ pyo3 = { version = "0.21", features = ["extension-module"] }
 
 | Функция | Сигнатура | Описание |
 |---------|-----------|---------|
-| `scan_vault_fast` | `(path: str) -> str` | Рекурсивный поиск всех `.md` файлов, возвращает JSON-список путей |
+| `scan_vault_fast` | `(path: str) -> str` | Рекурсивный поиск всех `.md` файлов, возвращает человекочитаемый список путей |
 | `read_file_fast` | `(path: str) -> str` | Быстрое чтение файла в UTF-8 |
 | `fetch_website_fast` | `(url: str) -> str` | HTTP GET запрос, возвращает тело ответа как строку |
 
@@ -70,6 +70,15 @@ html = orange_core.fetch_website_fast("https://example.com")
 
 **Ошибка `ModuleNotFoundError: No module named 'orange_core'`**  
 → Убедитесь что `.venv` активирован и выполните `maturin develop --release` заново.
+
+**`import orange_core` проходит, но функций нет**
+→ Это значит, что Python видит папку исходников, но нативное расширение не собрано. Выполните:
+
+```bash
+cd orange_core
+maturin develop --release
+python -c "import orange_core; assert hasattr(orange_core, 'scan_vault_fast')"
+```
 
 **Ошибка линковки на Windows**  
 → Установите [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) с компонентом "C++ Build Tools".

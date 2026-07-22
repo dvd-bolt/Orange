@@ -30,7 +30,7 @@ async def summarize_text(text: str, api_key: str) -> str:
         data = response.json()
         try:
             return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        except (KeyError, IndexErrors):
+        except (KeyError, IndexError):
             return "Не удалось сжать историю."
 
 async def fold_history(messages: List[Dict[str, Any]], api_key: str, max_tokens: int = 4000) -> List[Dict[str, Any]]:

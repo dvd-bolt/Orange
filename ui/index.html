@@ -13,6 +13,7 @@
 
     <!-- Markdown Parser Library -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
 
     <!-- D3.js for Knowledge Graph -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
@@ -109,6 +110,15 @@
                 </div>
 
                 <div class="flex items-center gap-3">
+                    <button onclick="openMorningDashboard()" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-2 py-1.5 hover:border-primary" title="Morning Dashboard">
+                        <span class="material-symbols-outlined text-[16px]">dashboard</span>
+                    </button>
+                    <button onclick="openMemoryEditor()" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-2 py-1.5 hover:border-primary" title="Memory Editor">
+                        <span class="material-symbols-outlined text-[16px]">memory</span>
+                    </button>
+                    <button onclick="openSmartInbox()" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-2 py-1.5 hover:border-primary" title="Smart Inbox">
+                        <span class="material-symbols-outlined text-[16px]">inbox</span>
+                    </button>
                     <!-- Knowledge Graph Button -->
                     <button onclick="toggleKnowledgeGraph()" id="btn-knowledge-graph" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-3 py-1.5 hover:border-primary">
                         <span class="material-symbols-outlined text-[16px]">schema</span>
@@ -156,8 +166,20 @@
                     </h2>
                     <button onclick="toggleKnowledgeGraph()" class="text-on-surface hover:text-primary material-symbols-outlined text-[20px] transition-colors">close</button>
                 </div>
-                <div class="flex-1 w-full bg-black/40 border border-outline relative overflow-hidden" id="graph-svg-container">
-                    <!-- SVG will be appended here by D3.js -->
+                <div class="flex flex-wrap gap-2 mb-3" id="graph-filter-controls">
+                    <button onclick="setGraphFilter('all')" data-graph-filter="all" class="graph-filter-btn border border-primary text-primary px-2 py-1 font-label-mono text-[10px]">ALL</button>
+                    <button onclick="setGraphFilter('orphan')" data-graph-filter="orphan" class="graph-filter-btn border border-outline text-on-surface px-2 py-1 font-label-mono text-[10px]">ORPHAN</button>
+                    <button onclick="setGraphFilter('project')" data-graph-filter="project" class="graph-filter-btn border border-outline text-on-surface px-2 py-1 font-label-mono text-[10px]">PROJECT</button>
+                    <button onclick="setGraphFilter('inbox')" data-graph-filter="inbox" class="graph-filter-btn border border-outline text-on-surface px-2 py-1 font-label-mono text-[10px]">INBOX</button>
+                </div>
+                <div class="flex-1 w-full min-h-0 flex gap-4">
+                    <div class="flex-1 bg-black/40 border border-outline relative overflow-hidden" id="graph-svg-container">
+                        <!-- SVG will be appended here by D3.js -->
+                    </div>
+                    <aside id="graph-note-preview" class="hidden w-80 border border-outline bg-black/40 p-4 overflow-y-auto shrink-0">
+                        <div class="font-label-caps text-label-caps text-primary mb-3">NOTE_PREVIEW</div>
+                        <div id="graph-note-preview-content" class="font-label-mono text-[11px] text-on-surface space-y-3"></div>
+                    </aside>
                 </div>
             </div>
 
@@ -288,6 +310,20 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
                     </div>
                 </div>
                 <div class="flex justify-between items-center py-2">
+                    <span class="font-label-mono text-label-mono">AUTO_BACKUP</span>
+                    <div class="flex border border-outline-variant">
+                        <button id="btn-autobackup-on" onclick="updateAutoBackupUI('ON')" class="px-3 py-1 text-on-surface text-[10px]">ON</button>
+                        <button id="btn-autobackup-off" onclick="updateAutoBackupUI('OFF')" class="px-3 py-1 bg-primary text-on-primary text-[10px] font-bold">OFF</button>
+                    </div>
+                </div>
+                <div class="flex justify-between items-center py-2">
+                    <span class="font-label-mono text-label-mono">AUTO_PUSH</span>
+                    <div class="flex border border-outline-variant">
+                        <button id="btn-autopush-on" onclick="updateAutoPushUI('ON')" class="px-3 py-1 text-on-surface text-[10px]">ON</button>
+                        <button id="btn-autopush-off" onclick="updateAutoPushUI('OFF')" class="px-3 py-1 bg-primary text-on-primary text-[10px] font-bold">OFF</button>
+                    </div>
+                </div>
+                <div class="flex justify-between items-center py-2">
                     <span class="font-label-mono text-label-mono">LANGUAGE / ЯЗЫК</span>
                     <select id="language-toggle" onchange="switchLanguage(this.value)" class="bg-black border border-outline-variant text-[10px] font-label-mono text-primary px-2 py-1 outline-none focus:border-primary">
                         <option value="ru">RU</option>
@@ -320,6 +356,9 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
                     <span class="font-label-mono text-[11px]">MCP_CLIENT</span>
                     <span id="status-mcp" class="text-on-surface-variant text-[10px] font-bold">OFFLINE</span>
                 </div>
+                <button onclick="runManualBackup()" class="w-full p-2 border border-primary text-primary hover:bg-primary hover:text-on-primary font-label-caps text-label-caps transition-colors">
+                    RUN_LOCAL_BACKUP
+                </button>
             </div>
             <div class="flex gap-2 mt-4">
                 <button onclick="closeSettings()" class="flex-1 py-2 border border-outline-variant text-on-surface font-bold text-label-caps hover:bg-surface-variant transition-colors" data-i18n="btn_cancel">CANCEL</button>
@@ -358,6 +397,39 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- MEMORY_EDITOR Modal -->
+    <div id="memory-editor-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
+        <div class="w-full max-w-4xl max-h-[82vh] border border-outline-variant p-6 bg-surface flex flex-col gap-4 relative">
+            <div class="flex justify-between items-center border-b border-outline-variant pb-2">
+                <h2 class="font-label-caps text-label-caps text-primary">[MEMORY_EDITOR]</h2>
+                <button onclick="closeModal('memory-editor-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+            </div>
+            <div id="memory-editor-list" class="overflow-y-auto space-y-2 pr-1"></div>
+        </div>
+    </div>
+
+    <!-- SMART_INBOX Modal -->
+    <div id="smart-inbox-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
+        <div class="w-full max-w-3xl max-h-[82vh] border border-outline-variant p-6 bg-surface flex flex-col gap-4 relative">
+            <div class="flex justify-between items-center border-b border-outline-variant pb-2">
+                <h2 class="font-label-caps text-label-caps text-primary">[SMART_INBOX]</h2>
+                <button onclick="closeModal('smart-inbox-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+            </div>
+            <div id="smart-inbox-list" class="overflow-y-auto space-y-2 pr-1"></div>
+        </div>
+    </div>
+
+    <!-- MORNING_DASHBOARD Modal -->
+    <div id="morning-dashboard-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
+        <div class="w-full max-w-5xl max-h-[84vh] border border-outline-variant p-6 bg-surface flex flex-col gap-4 relative">
+            <div class="flex justify-between items-center border-b border-outline-variant pb-2">
+                <h2 class="font-label-caps text-label-caps text-primary">[MORNING_DASHBOARD]</h2>
+                <button onclick="closeModal('morning-dashboard-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+            </div>
+            <div id="morning-dashboard-content" class="overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-3 pr-1"></div>
         </div>
     </div>
 
@@ -450,6 +522,21 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- 7. COMMAND_PALETTE -->
+    <div id="command-palette-modal" class="fixed inset-0 z-[9998] hidden bg-black bg-opacity-75 backdrop-blur-sm">
+        <div class="w-full max-w-xl mx-auto mt-24 border border-outline-variant bg-surface p-3 shadow-2xl">
+            <div class="flex items-center gap-2 border-b border-outline-variant pb-2">
+                <span class="material-symbols-outlined text-primary text-[18px]">keyboard_command_key</span>
+                <input id="command-palette-input"
+                    class="flex-1 bg-transparent border-0 text-on-background font-label-mono text-[12px] focus:ring-0 outline-none"
+                    placeholder="COMMAND / ACTION..."
+                    oninput="renderCommandPalette(this.value)"
+                    onkeydown="handleCommandPaletteKey(event)" />
+            </div>
+            <div id="command-palette-list" class="mt-2 max-h-80 overflow-y-auto font-label-mono text-[11px]"></div>
         </div>
     </div>
 

@@ -1,5 +1,6 @@
 # Core AI Framework
 pydantic-ai[gemini]
+pydantic-graph
 pydantic
 pydantic-settings
 
@@ -41,3 +42,8 @@ playwright
 
 # Telegram userbot daemon
 telethon
+
+# Development / validation
+maturin
+pytest
+pytest-asyncio

@@ -170,12 +170,22 @@ async def self_review_node(ctx: StepContext[OrangeGraphState, OrangeDeps, None])
     print("[FSM] Entering Self-Review Node. Finalizing response.")
     ctx.state.output_text = ctx.state.draft_response
     
-    # Trigger Git auto-backup
-    if ctx.deps.obsidian_vault_path:
+    # Trigger Git auto-backup only when explicitly enabled in runtime settings.
+    auto_backup_enabled = False
+    auto_push_enabled = False
+    try:
+        from core.runtime_settings import load_runtime_settings
+        runtime_settings = load_runtime_settings()
+        auto_backup_enabled = runtime_settings.get("auto_backup_enabled", "OFF") == "ON"
+        auto_push_enabled = runtime_settings.get("auto_push_enabled", "OFF") == "ON"
+    except Exception as e:
+        print(f"[FSM Warning] Failed to read backup settings: {e}")
+
+    if auto_backup_enabled and ctx.deps.obsidian_vault_path:
         try:
             from core.git_backup import auto_backup_vault
             print(f"[FSM] Triggering automatic Git backup for vault: {ctx.deps.obsidian_vault_path}")
-            backup_res = await auto_backup_vault(ctx.deps.obsidian_vault_path)
+            backup_res = await auto_backup_vault(ctx.deps.obsidian_vault_path, push=auto_push_enabled)
             print(f"[FSM] Git backup status: {backup_res}")
         except Exception as e:
             print(f"[FSM Warning] Failed to run Git backup: {e}")

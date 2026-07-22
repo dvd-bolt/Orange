@@ -4,6 +4,12 @@ from core.dependencies import OrangeDeps
 import os
 import datetime
 
+def _orange_core_ready() -> bool:
+    return all(hasattr(orange_core, name) for name in ("scan_vault_fast", "read_file_fast", "fetch_website_fast"))
+
+def _rust_build_hint() -> str:
+    return "Rust-модуль orange_core не собран. Выполните: cd orange_core && maturin develop --release"
+
 def validate_path(vault_root: str, user_path: str) -> str:
     """
     Resolves the path to an absolute normalized path.
@@ -48,7 +54,19 @@ def scan_vault_fast(ctx: RunContext[OrangeDeps], path: str) -> str:
     """Рекурсивный поиск .md файлов в хранилище Obsidian."""
     try:
         valid_path = validate_path(ctx.deps.obsidian_vault_path, path)
-        return orange_core.scan_vault_fast(valid_path)
+        if _orange_core_ready():
+            return orange_core.scan_vault_fast(valid_path)
+        md_files = []
+        for root, dirs, files in os.walk(valid_path):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            for file in files:
+                if file.lower().endswith(".md"):
+                    md_files.append(os.path.join(root, file))
+        if not md_files:
+            return f"{_rust_build_hint()}\nВ директории {valid_path} нет .md файлов."
+        shown = "\n".join(f"- {file_path}" for file_path in md_files[:50])
+        suffix = "\n...[остальные скрыты ради экономии контекста]" if len(md_files) > 50 else ""
+        return f"{_rust_build_hint()}\nFallback Python scan найден заметки:\n{shown}{suffix}"
     except Exception as e:
         return f"Ошибка: {str(e)}"
 
@@ -56,13 +74,24 @@ def read_file_fast(ctx: RunContext[OrangeDeps], file_path: str) -> str:
     """Быстрое чтение содержимого файла с диска."""
     try:
         valid_path = validate_path(ctx.deps.obsidian_vault_path, file_path)
-        return orange_core.read_file_fast(valid_path)
+        if _orange_core_ready():
+            return orange_core.read_file_fast(valid_path)
+        with open(valid_path, "r", encoding="utf-8", errors="ignore") as f:
+            return f"{_rust_build_hint()}\n\n{f.read()}"
     except Exception as e:
         return f"Ошибка: {str(e)}"
 
 def fetch_website_fast(url: str) -> str:
     """Загрузка HTML-кода веб-сайта для OSINT-анализа."""
-    return orange_core.fetch_website_fast(url)
+    if _orange_core_ready():
+        return orange_core.fetch_website_fast(url)
+    try:
+        import urllib.request
+        with urllib.request.urlopen(url, timeout=10) as response:
+            text = response.read().decode("utf-8", errors="replace")
+        return text[:15000] if len(text) > 15000 else text
+    except Exception as e:
+        return f"{_rust_build_hint()}\nОшибка сети: {e}"
 
 from core.file_ops import atomic_write_obsidian_note
 
@@ -153,7 +182,17 @@ def cosine_similarity(v1: list, v2: list) -> float:
 
 async def _search_memory_like_fallback(ctx: RunContext, query: str) -> str:
     from core import db
-    results = db.search_messages(query)
+    search_term = f"%{query}%"
+    with db.get_connection() as conn:
+        cursor = conn.execute(
+            '''SELECT m.*, c.title
+               FROM messages m
+               JOIN chats c ON m.chat_id = c.id
+               WHERE m.content LIKE ? AND COALESCE(m.exclude_from_rag, 0) = 0
+               ORDER BY m.timestamp DESC LIMIT 50''',
+            (search_term,)
+        )
+        results = [dict(row) for row in cursor.fetchall()]
     if not results:
         return f"Ничего не найдено в памяти по запросу '{query}'"
         
@@ -194,7 +233,8 @@ async def search_memory(ctx: RunContext, query: str) -> str:
             cursor = conn.execute(
                 '''SELECT m.id, m.content, m.role, c.title 
                    FROM messages m 
-                   JOIN chats c ON m.chat_id = c.id'''
+                   JOIN chats c ON m.chat_id = c.id
+                   WHERE COALESCE(m.exclude_from_rag, 0) = 0'''
             )
             messages = [dict(row) for row in cursor.fetchall()]
     except Exception as e:
@@ -394,13 +434,121 @@ async def deep_research(ctx: RunContext, topic: str) -> str:
     except Exception as e:
         return f"Ошибка при генерации отчета: {str(e)}\n\nСырые данные поисковой выдачи:\n" + "\n".join(f"- {r['title']}: {r['url']}" for r in results)
 
-# --- ИНСТРУМЕНТ ЛОКАЛЬНОГО ВЫПОЛНЕНИЯ КОДА (SANDBOX) ---
+# --- ИНСТРУМЕНТ ЛОКАЛЬНОГО ВЫПОЛНЕНИЯ КОДА (RESTRICTED EXECUTOR) ---
+
+SAFE_PYTHON_IMPORTS = {
+    "collections",
+    "datetime",
+    "decimal",
+    "fractions",
+    "itertools",
+    "json",
+    "math",
+    "random",
+    "re",
+    "statistics",
+}
+
+BLOCKED_PYTHON_NAMES = {
+    "__import__",
+    "__builtins__",
+    "breakpoint",
+    "compile",
+    "eval",
+    "exec",
+    "globals",
+    "help",
+    "input",
+    "locals",
+    "memoryview",
+    "open",
+    "vars",
+}
+
+BLOCKED_PYTHON_ATTRIBUTES = {
+    "chmod",
+    "chown",
+    "connect",
+    "exec",
+    "fork",
+    "kill",
+    "mkdir",
+    "open",
+    "popen",
+    "remove",
+    "rename",
+    "replace",
+    "request",
+    "rmdir",
+    "run",
+    "rmtree",
+    "send",
+    "socket",
+    "spawn",
+    "system",
+    "unlink",
+    "walk",
+    "write",
+}
+
+SUSPICIOUS_PATH_FRAGMENTS = (
+    "/Users/",
+    "/private/",
+    "/etc/",
+    "/var/",
+    "/tmp/",
+    "C:\\",
+    "..",
+    "~",
+)
+
+MAX_EXECUTOR_OUTPUT_BYTES = 50 * 1024
+
+
+def validate_python_for_restricted_executor(code: str) -> None:
+    """Rejects code that asks for file, process, network, or non-whitelisted imports."""
+    import ast
+
+    tree = ast.parse(code)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".")[0]
+                if root not in SAFE_PYTHON_IMPORTS:
+                    raise ValueError(f"Импорт '{alias.name}' запрещен restricted executor.")
+        elif isinstance(node, ast.ImportFrom):
+            root = (node.module or "").split(".")[0]
+            if node.level or root not in SAFE_PYTHON_IMPORTS:
+                raise ValueError(f"Импорт from '{node.module}' запрещен restricted executor.")
+        elif isinstance(node, ast.Name) and node.id in BLOCKED_PYTHON_NAMES:
+            raise ValueError(f"Имя '{node.id}' запрещено restricted executor.")
+        elif isinstance(node, ast.Attribute) and node.attr in BLOCKED_PYTHON_ATTRIBUTES:
+            raise ValueError(f"Атрибут '.{node.attr}' запрещен restricted executor.")
+        elif isinstance(node, ast.Attribute) and node.attr.startswith("__"):
+            raise ValueError("Dunder-интроспекция запрещена restricted executor.")
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if any(fragment in node.value for fragment in SUSPICIOUS_PATH_FRAGMENTS):
+                raise ValueError("Код содержит путь вне sandbox и был отклонен.")
+
+
+def _truncate_executor_output(text: str) -> str:
+    encoded = text.encode("utf-8", errors="replace")
+    if len(encoded) <= MAX_EXECUTOR_OUTPUT_BYTES:
+        return text
+    truncated = encoded[:MAX_EXECUTOR_OUTPUT_BYTES].decode("utf-8", errors="replace")
+    return truncated + "\n...[output truncated to 50 KB]"
 
 async def execute_python(ctx: RunContext[OrangeDeps], code: str) -> str:
     """
-    Запускает переданный Python-код в локальном процессе (subprocess) с таймаутом 10 секунд.
-    Перехватывает stdout и stderr выполнения. Позволяет тестировать скрипты и производить вычисления.
+    Runs Python in a restricted local subprocess after explicit user approval.
+    This is not a VM boundary, but it blocks filesystem/network/process APIs and
+    only allows a small import whitelist for calculations.
     """
+    try:
+        validate_python_for_restricted_executor(code)
+    except Exception as e:
+        return f"Ошибка безопасности: {str(e)}"
+
     if not ctx.deps.request_override:
         return "Ошибка: Выполнение Python-кода запрещено, так как callback одобрения не настроен."
         
@@ -410,29 +558,105 @@ async def execute_python(ctx: RunContext[OrangeDeps], code: str) -> str:
 
     import sys
     import subprocess
-    import tempfile
     import os
     import asyncio
+    import textwrap
+    import uuid
     
     print(f"[execute_python] Получен запрос на запуск Python-кода (длина: {len(code)} символов)")
     
     try:
-        # Записываем код во временный файл
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as temp_file:
+        sandbox_root = os.path.abspath(os.path.join(".orange_runtime", "sandbox"))
+        os.makedirs(sandbox_root, exist_ok=True)
+        run_id = uuid.uuid4().hex
+        temp_path = os.path.join(sandbox_root, f"user_{run_id}.py")
+        runner_path = os.path.join(sandbox_root, f"runner_{run_id}.py")
+        with open(temp_path, "w", encoding="utf-8") as temp_file:
             temp_file.write(code)
-            temp_path = temp_file.name
+
+        runner_code = f"""
+import builtins
+import pathlib
+
+ALLOWED_IMPORTS = {sorted(SAFE_PYTHON_IMPORTS)!r}
+SCRIPT_PATH = {temp_path!r}
+_original_import = builtins.__import__
+
+def _restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
+    root = name.split('.')[0]
+    if level != 0 or root not in ALLOWED_IMPORTS:
+        raise ImportError(f"Import '{{name}}' is not allowed in Orange restricted executor")
+    return _original_import(name, globals, locals, fromlist, level)
+
+safe_builtins = {{
+    "__import__": _restricted_import,
+    "abs": builtins.abs,
+    "all": builtins.all,
+    "any": builtins.any,
+    "bool": builtins.bool,
+    "chr": builtins.chr,
+    "dict": builtins.dict,
+    "divmod": builtins.divmod,
+    "enumerate": builtins.enumerate,
+    "filter": builtins.filter,
+    "float": builtins.float,
+    "format": builtins.format,
+    "frozenset": builtins.frozenset,
+    "hash": builtins.hash,
+    "hex": builtins.hex,
+    "int": builtins.int,
+    "isinstance": builtins.isinstance,
+    "issubclass": builtins.issubclass,
+    "len": builtins.len,
+    "list": builtins.list,
+    "map": builtins.map,
+    "max": builtins.max,
+    "min": builtins.min,
+    "next": builtins.next,
+    "object": builtins.object,
+    "oct": builtins.oct,
+    "ord": builtins.ord,
+    "pow": builtins.pow,
+    "print": builtins.print,
+    "range": builtins.range,
+    "repr": builtins.repr,
+    "reversed": builtins.reversed,
+    "round": builtins.round,
+    "set": builtins.set,
+    "slice": builtins.slice,
+    "sorted": builtins.sorted,
+    "str": builtins.str,
+    "sum": builtins.sum,
+    "tuple": builtins.tuple,
+    "zip": builtins.zip,
+}}
+
+source = pathlib.Path(SCRIPT_PATH).read_text(encoding="utf-8")
+exec_globals = {{"__builtins__": safe_builtins, "__name__": "__main__", "__file__": SCRIPT_PATH}}
+exec(compile(source, SCRIPT_PATH, "exec"), exec_globals, None)
+"""
+        with open(runner_path, "w", encoding="utf-8") as runner_file:
+            runner_file.write(textwrap.dedent(runner_code))
             
-        # Запускаем скрипт асинхронно через текущий интерпретатор python.exe
+        safe_env = {
+            key: value
+            for key, value in os.environ.items()
+            if key in {"PATH", "SystemRoot", "WINDIR", "TMPDIR", "TEMP", "TMP"}
+        }
+        safe_env.update({"PYTHONIOENCODING": "utf-8", "PYTHONNOUSERSITE": "1"})
+
         process = await asyncio.create_subprocess_exec(
-            sys.executable, temp_path,
+            sys.executable, "-I", runner_path,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=subprocess.PIPE,
+            cwd=sandbox_root,
+            env=safe_env
         )
         
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(process.communicate(), timeout=10.0)
-            stdout = stdout_bytes.decode('utf-8', errors='replace')
-            stderr = stderr_bytes.decode('utf-8', errors='replace')
+            stdout = _truncate_executor_output(stdout_bytes.decode('utf-8', errors='replace'))
+            stderr = _truncate_executor_output(stderr_bytes.decode('utf-8', errors='replace'))
             exit_code = process.returncode
             
             if exit_code != 0:
@@ -468,8 +692,9 @@ async def execute_python(ctx: RunContext[OrangeDeps], code: str) -> str:
             
         finally:
             # Удаляем временный файл
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+            for path in (temp_path, runner_path):
+                if os.path.exists(path):
+                    os.remove(path)
                 
     except Exception as e:
         return f"Критическая ошибка при запуске песочницы: {str(e)}"
@@ -677,6 +902,3 @@ async def expand_note_links(ctx: RunContext[OrangeDeps], file_path: str) -> str:
         return f"Успешно раскрыто {len(appendix) - 1} ссылок(и) и добавлено в конец заметки."
         
     return "Не удалось раскрыть ссылки в заметке."
-
-
-

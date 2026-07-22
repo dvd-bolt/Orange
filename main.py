@@ -3,6 +3,7 @@ import threading
 import asyncio
 import webview
 import json
+from urllib.parse import parse_qs, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from watchdog.observers import Observer
 from dotenv import load_dotenv
@@ -32,7 +33,8 @@ async def safe_connect_mcp(client: ObsidianMCPClient):
 
 class ObsidianQueryHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == '/api/graph':
+        parsed = urlparse(self.path)
+        if parsed.path == '/api/graph':
             try:
                 from core.graph_api import get_notes_graph
                 vault_path = self.server.deps.obsidian_vault_path
@@ -48,6 +50,47 @@ class ObsidianQueryHandler(BaseHTTPRequestHandler):
                 self.send_header('Content-Type', 'text/plain; charset=utf-8')
                 self.end_headers()
                 self.wfile.write(f"Error: {str(e)}".encode('utf-8'))
+        elif parsed.path == '/api/note':
+            try:
+                query = parse_qs(parsed.query)
+                note_path = query.get('path', [''])[0]
+                if not note_path:
+                    raise ValueError("Missing note path")
+
+                vault_path = os.path.abspath(self.server.deps.obsidian_vault_path)
+                candidate = os.path.abspath(os.path.normpath(os.path.join(vault_path, note_path)))
+                if os.path.commonpath([vault_path, candidate]) != vault_path:
+                    raise ValueError("Path traversal is not allowed")
+                if not candidate.lower().endswith(".md"):
+                    raise ValueError("Only markdown notes can be read")
+
+                with open(candidate, 'r', encoding='utf-8', errors='ignore') as file:
+                    content = file.read()
+
+                from core.graph_api import get_notes_graph
+                graph = get_notes_graph(vault_path)
+                node = next((item for item in graph["nodes"] if item.get("path") == os.path.relpath(candidate, vault_path)), {})
+                payload = {
+                    "path": os.path.relpath(candidate, vault_path),
+                    "title": os.path.splitext(os.path.basename(candidate))[0],
+                    "content": content[:8000],
+                    "suggested_links": node.get("suggested_links", []),
+                    "degree": node.get("degree", 0),
+                    "orphan": node.get("orphan", False),
+                    "type": node.get("type", "note"),
+                }
+
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps(payload).encode('utf-8'))
+            except Exception as e:
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
         else:
             self.send_response(404)
             self.end_headers()
@@ -143,7 +186,7 @@ def main():
     class NonReusableHTTPServer(ThreadingHTTPServer):
         allow_reuse_address = False
 
-    start_port = 8080
+    start_port = settings.orange_port
     for port in range(start_port, start_port + 11):
         try:
             server = NonReusableHTTPServer(('127.0.0.1', port), ObsidianQueryHandler)
@@ -153,11 +196,12 @@ def main():
             print(f"[HTTP Server] Порт {port} занят, пробуем следующий. Ошибка: {e}")
             
     if server is None:
-        raise OSError(f"Не удалось запустить HTTP сервер: все порты от {settings.orange_port} до {settings.orange_port + 10} заняты.")
+        raise OSError(f"Не удалось запустить HTTP сервер: все порты от {start_port} до {start_port + 10} заняты.")
         
     server.deps = deps
     server.api = api
     server.background_loop = background_loop
+    api.set_http_endpoint("127.0.0.1", bound_port)
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
     print(f"[HTTP Server] Запуск HTTP сервера на http://127.0.0.1:{bound_port}")

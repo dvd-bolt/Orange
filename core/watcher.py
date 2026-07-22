@@ -39,11 +39,11 @@ class ObsidianWatcher(FileSystemEventHandler):
         
         if self.api._window:
             self.api._window.evaluate_js(
-                f"appendMessage('Система [Watchdog]', 'Обнаружено изменение в файле <b>{safe_filename}</b>. Запускаю фоновый анализ...', 'sys')"
+                f"appendMessage('Система [Watchdog]', 'Обнаружено изменение в файле <b>{safe_filename}</b>. Подготовлено предложение Smart Inbox без изменения vault.', 'sys')"
             )
-            
-        # Запускаем агента для чтения файла в профиле project_manager (Распределение задач)
-        self.api.push_background_task("project_manager", file_path)
+
+        if hasattr(self.api, "propose_inbox_review"):
+            self.api.propose_inbox_review(file_path)
 
     def on_created(self, event):
         if event.is_directory or not event.src_path.endswith('.md'):
@@ -56,6 +56,8 @@ class ObsidianWatcher(FileSystemEventHandler):
                 content = f.read()
             global_bm25_indexer.add_document(file_path, content)
             print(f"[Watcher] Added new note to BM25 index: {filename}")
+            if hasattr(self.api, "propose_inbox_review"):
+                self.api.propose_inbox_review(file_path)
         except Exception as e:
             print(f"[Watcher Error] Failed to index created file: {e}")
 
