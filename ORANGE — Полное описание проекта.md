@@ -138,7 +138,7 @@ C:\orange\
 
 ├── orange_memory.db                 # SQLite база данных (в .gitignore)
 
-├── test_vault/                      # Тестовое Obsidian-хранилище
+├── examples/test_vault/             # Минимальное тестовое Obsidian-хранилище
 
 └── stitch_orange_terminal_interface/ # Архив дизайн-референсов (не runtime)
 
@@ -365,7 +365,7 @@ GOOGLE_API_KEY=ваш_ключ_gemini
 
 OBSIDIAN_VAULT_PATH=C:\Users\вы\Documents\ObsidianVault
 
-ORANGE_PORT=8000
+ORANGE_PORT=8080
 
 # Опционально для Telegram:
 

@@ -7,8 +7,8 @@ import os
 import subprocess
 import time
 import asyncio
-from pydantic_ai.models.openai import OpenAIModel
-from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 if "GOOGLE_API_KEY" in os.environ and "GEMINI_API_KEY" not in os.environ:
     os.environ["GEMINI_API_KEY"] = os.environ["GOOGLE_API_KEY"]
@@ -21,13 +21,10 @@ _lite_limiter_lock = None
 _last_heavy_time = 0.0
 _last_lite_time = 0.0
 
-def get_openrouter_model(model_name: str) -> OpenAIModel:
+def get_openrouter_model(model_name: str) -> OpenAIChatModel:
     api_key = os.environ.get("OPENROUTER_API_KEY")
-    provider = OpenAIProvider(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key
-    )
-    return OpenAIModel(
+    provider = OpenRouterProvider(api_key=api_key)
+    return OpenAIChatModel(
         model_name,
         provider=provider,
     )
@@ -148,6 +145,7 @@ class OrangeAgent(Agent):
 agent = OrangeAgent(
     LITE_MODEL,
     deps_type=OrangeDeps,
+    defer_model_check=True,
 )
 
 # Регистрация инструментов из Rust-ядра

@@ -768,9 +768,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { readFileSync, readdirSync, writeFileSync, existsSync } from "fs";
 
-import { join, extname } from "path";
+import { extname, relative, resolve } from "path";
 
-const VAULT_PATH = process.env.OBSIDIAN_VAULT_PATH || "./test_vault";
+const VAULT_PATH = process.env.OBSIDIAN_VAULT_PATH || "../examples/test_vault";
 
 const server = new Server(
 

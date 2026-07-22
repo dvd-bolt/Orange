@@ -94,6 +94,15 @@ class AgentRunner:
         response_text = run_res.data if hasattr(run_res, "data") else str(run_res)
         db.add_message(chat_id, "model", response_text)
 
+        api_key = self._deps.settings.gemini_api_key
+        if api_key and (state.loop_count > 0 or len(history) > 4):
+            try:
+                from core.skills import crystallize_skill
+
+                asyncio.create_task(crystallize_skill(chat_id, self._deps, api_key))
+            except Exception as e:
+                print(f"[AgentRunner Skills Error] Skill crystallization skipped: {e}")
+
         if len(history) == 1:
             asyncio.create_task(self.generate_chat_title(chat_id, user_prompt, response_text))
 
@@ -137,8 +146,9 @@ class AgentRunner:
         for filepath in relevant_files:
             filename = os.path.basename(filepath)
             try:
-                with open(filepath, "r", encoding="utf-8", errors="ignore") as file:
-                    file_content = file.read()
+                from core.markdown_ops import read_note_cli
+
+                file_content = await read_note_cli(filepath, vault_path=self._deps.obsidian_vault_path)
                 context_chunks.append(f"### Obsidian Note: {filename}\n{file_content}")
                 print(f"[AgentRunner] Injected relevant context from note: {filename}")
             except Exception as e:

@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, orangeV2]
 
 jobs:
   python:
@@ -13,8 +13,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@stable
       - run: python -m pip install --upgrade pip
       - run: pip install -r requirements.txt
+      - run: maturin develop --release
+        working-directory: orange_core
+      - run: python -c "import orange_core; assert hasattr(orange_core, 'scan_vault_fast')"
       - run: python -m compileall main.py check_models.py core integrations
       - run: pytest
 

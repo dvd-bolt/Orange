@@ -1,6 +1,7 @@
 # Core AI Framework
-pydantic-ai[gemini]
+pydantic-ai
 pydantic
+pydantic-graph
 pydantic-settings
 
 # MCP (Model Context Protocol)
@@ -44,3 +45,7 @@ telethon
 
 # Image processing for Web UI / Browser annotations
 Pillow
+
+# Development / checks
+pytest
+maturin

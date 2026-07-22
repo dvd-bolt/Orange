@@ -4,6 +4,12 @@ from core.dependencies import OrangeDeps
 import os
 import datetime
 
+def _orange_core_ready() -> bool:
+    return all(hasattr(orange_core, name) for name in ("scan_vault_fast", "read_file_fast", "fetch_website_fast"))
+
+def _rust_build_hint() -> str:
+    return "Rust-модуль orange_core не собран. Выполните: cd orange_core && maturin develop --release"
+
 def validate_path(vault_root: str, user_path: str) -> str:
     """
     Resolves the path to an absolute normalized path.
@@ -91,7 +97,19 @@ def scan_vault_fast(ctx: RunContext[OrangeDeps], path: str) -> str:
     """Рекурсивный поиск .md файлов в хранилище Obsidian."""
     try:
         valid_path = validate_path(ctx.deps.obsidian_vault_path, path)
-        return orange_core.scan_vault_fast(valid_path)
+        if _orange_core_ready():
+            return orange_core.scan_vault_fast(valid_path)
+        md_files = []
+        for root, dirs, files in os.walk(valid_path):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            for file in files:
+                if file.lower().endswith(".md"):
+                    md_files.append(os.path.join(root, file))
+        if not md_files:
+            return f"{_rust_build_hint()}\nВ директории {valid_path} нет .md файлов."
+        shown = "\n".join(f"- {file_path}" for file_path in md_files[:50])
+        suffix = "\n...[остальные скрыты ради экономии контекста]" if len(md_files) > 50 else ""
+        return f"{_rust_build_hint()}\nFallback Python scan найден заметки:\n{shown}{suffix}"
     except Exception as e:
         return f"Ошибка: {str(e)}"
 
@@ -110,9 +128,17 @@ async def read_file_fast(ctx: RunContext[OrangeDeps], file_path: str) -> str:
 
 def fetch_website_fast(url: str) -> str:
     """Загрузка HTML-кода веб-сайта для OSINT-анализа."""
-    return orange_core.fetch_website_fast(url)
+    if _orange_core_ready():
+        return orange_core.fetch_website_fast(url)
+    try:
+        import urllib.request
+        with urllib.request.urlopen(url, timeout=10) as response:
+            text = response.read().decode("utf-8", errors="replace")
+        return text[:15000] if len(text) > 15000 else text
+    except Exception as e:
+        return f"{_rust_build_hint()}\nОшибка сети: {e}"
 
-from core.file_ops import atomic_write_obsidian_note
+from core.services.write_preview_service import WritePreviewService, confirm_and_apply_plan
 
 async def rewrite_file(ctx: RunContext[OrangeDeps], file_path: str, content: str) -> str:
     """
@@ -120,8 +146,16 @@ async def rewrite_file(ctx: RunContext[OrangeDeps], file_path: str, content: str
     Использует временные файлы и механизм retry для обхода блокировок iCloud.
     """
     try:
-        valid_path = validate_path(ctx.deps.obsidian_vault_path, file_path)
-        await atomic_write_obsidian_note(valid_path, content)
+        preview = WritePreviewService(ctx.deps.obsidian_vault_path)
+        plan = preview.build_plan(file_path, content, action="rewrite_file")
+        approved = await confirm_and_apply_plan(
+            ctx.deps,
+            plan,
+            "vault_write",
+            f"Rewrite note {plan['relative_path']}",
+        )
+        if not approved:
+            return "Отклонено: файл не был изменен."
         return "Успех: файл перезаписан"
     except Exception as e:
         return f"Ошибка: {str(e)}"
@@ -147,9 +181,6 @@ async def add_task(ctx: RunContext, file_path: str, task: str) -> str:
         
         print(f"[DEBUG add_task] Агент передал: {file_path} | Реально пишем в: {full_path}")
             
-        # Убедимся, что родительские директории существуют
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
-            
         # Чтение файла, если он существует, иначе создаем шаблон
         if os.path.exists(full_path):
             async with aiofiles.open(full_path, mode='r', encoding='utf-8') as f:
@@ -160,8 +191,16 @@ async def add_task(ctx: RunContext, file_path: str, task: str) -> str:
         # Парсинг и модификация
         new_content = append_task_to_markdown(content, task)
         
-        # Безопасное сохранение
-        await atomic_write_obsidian_note(full_path, new_content)
+        preview = WritePreviewService(ctx.deps.obsidian_vault_path)
+        plan = preview.build_plan(full_path, new_content, action="add_task")
+        approved = await confirm_and_apply_plan(
+            ctx.deps,
+            plan,
+            "vault_write",
+            f"Add task to {plan['relative_path']}",
+        )
+        if not approved:
+            return "Отклонено: задача не была добавлена."
         
         return "Успех: задача добавлена в файл"
     except Exception as e:
@@ -201,7 +240,18 @@ def cosine_similarity(v1: list, v2: list) -> float:
 
 async def _search_memory_like_fallback(ctx: RunContext, query: str) -> str:
     from core import db
-    results = db.search_messages(query)
+    search_term = f"%{query}%"
+    with db.get_connection() as conn:
+        cursor = conn.execute(
+            '''SELECT m.*, c.title
+               FROM messages m
+               JOIN chats c ON m.chat_id = c.id
+               WHERE m.content LIKE ?
+                 AND COALESCE(m.exclude_from_rag, 0) = 0
+               ORDER BY m.timestamp DESC LIMIT 50''',
+            (search_term,)
+        )
+        results = [dict(row) for row in cursor.fetchall()]
     if not results:
         return f"Ничего не найдено в памяти по запросу '{query}'"
         
@@ -242,7 +292,8 @@ async def search_memory(ctx: RunContext, query: str) -> str:
             cursor = conn.execute(
                 '''SELECT m.id, m.content, m.role, c.title 
                    FROM messages m 
-                   JOIN chats c ON m.chat_id = c.id'''
+                   JOIN chats c ON m.chat_id = c.id
+                   WHERE COALESCE(m.exclude_from_rag, 0) = 0'''
             )
             messages = [dict(row) for row in cursor.fetchall()]
     except Exception as e:
@@ -305,7 +356,6 @@ async def search_memory(ctx: RunContext, query: str) -> str:
 async def export_active_chat(chat_id: str, deps) -> str:
     """Функция экспорта чата (вызывается напрямую из bridge.py, не как инструмент агента)"""
     from core import db
-    from core.file_ops import atomic_write_obsidian_note
     import uuid
     
     history = db.get_chat_history(chat_id)
@@ -330,9 +380,17 @@ async def export_active_chat(chat_id: str, deps) -> str:
     filename = f"Export_{uuid.uuid4().hex[:8]}.md"
     obsidian_root = deps.obsidian_vault_path
     target_path = os.path.join(obsidian_root, "04-projects", filename)
-    os.makedirs(os.path.dirname(target_path), exist_ok=True)
     
-    await atomic_write_obsidian_note(target_path, markdown_result)
+    preview = WritePreviewService(deps.obsidian_vault_path)
+    plan = preview.build_plan(target_path, markdown_result, action="export_chat")
+    approved = await confirm_and_apply_plan(
+        deps,
+        plan,
+        "vault_write",
+        f"Export active chat to {plan['relative_path']}",
+    )
+    if not approved:
+        return "Отклонено: экспорт не был записан."
     return f"Успех! Чат экспортирован в {target_path}"
 
 # --- ИНСТРУМЕНТЫ DEEP RESEARCH (OSINT) ---
@@ -537,11 +595,25 @@ def validate_python_for_restricted_executor(code: str) -> None:
             if any(fragment in node.value for fragment in SUSPICIOUS_PATH_FRAGMENTS):
                 raise ValueError("Absolute path access is blocked in restricted executor.")
 
+
+def _decode_limited_output(data: bytes) -> str:
+    truncated = len(data) > MAX_EXECUTOR_OUTPUT_BYTES
+    text = data[:MAX_EXECUTOR_OUTPUT_BYTES].decode("utf-8", errors="replace")
+    if truncated:
+        text += "\n...[output truncated to 50 KB]"
+    return text
+
 async def execute_python(ctx: RunContext[OrangeDeps], code: str) -> str:
     """
-    Запускает переданный Python-код в локальном процессе (subprocess) с таймаутом 10 секунд.
-    Перехватывает stdout и stderr выполнения. Позволяет тестировать скрипты и производить вычисления.
+    Runs Python in a restricted local subprocess after explicit user approval.
+    This is not a VM boundary, but it blocks filesystem/network/process APIs and
+    only allows a small import whitelist for calculations.
     """
+    try:
+        validate_python_for_restricted_executor(code)
+    except Exception as e:
+        return f"Ошибка безопасности: {str(e)}"
+
     if not ctx.deps.request_override:
         return "Ошибка: Выполнение Python-кода запрещено, так как callback одобрения не настроен."
         
@@ -551,33 +623,39 @@ async def execute_python(ctx: RunContext[OrangeDeps], code: str) -> str:
 
     import sys
     import subprocess
-    import tempfile
     import os
     import asyncio
+    import uuid
     
     print(f"[execute_python] Получен запрос на запуск Python-кода (длина: {len(code)} символов)")
     
     try:
-        # Записываем код во временный файл
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as temp_file:
+        sandbox_root = os.path.abspath(os.path.join(".orange_runtime", "sandbox"))
+        os.makedirs(sandbox_root, exist_ok=True)
+        temp_path = os.path.join(sandbox_root, f"user_{uuid.uuid4().hex}.py")
+
+        with open(temp_path, mode='w', encoding='utf-8') as temp_file:
             temp_file.write(code)
-            temp_path = temp_file.name
             
         # Translate backslashes to forward slashes in arguments on-the-fly to prevent Git Bash/MSYS escaping bugs
         executable_path = sys.executable.replace('\\', '/')
         script_path = temp_path.replace('\\', '/')
         
-        # Запускаем скрипт асинхронно через текущий интерпретатор python.exe
         process = await asyncio.create_subprocess_exec(
-            executable_path, script_path,
+            executable_path, "-I", script_path,
+            cwd=sandbox_root,
+            env={
+                "PYTHONIOENCODING": "utf-8",
+                "PYTHONNOUSERSITE": "1",
+            },
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
         
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(process.communicate(), timeout=10.0)
-            stdout = stdout_bytes.decode('utf-8', errors='replace')
-            stderr = stderr_bytes.decode('utf-8', errors='replace')
+            stdout = _decode_limited_output(stdout_bytes)
+            stderr = _decode_limited_output(stderr_bytes)
             exit_code = process.returncode
             
             if exit_code != 0:
@@ -829,8 +907,16 @@ async def expand_note_links(ctx: RunContext[OrangeDeps], file_path: str) -> str:
             
     if len(appendix) > 1:
         new_content = content + "\n" + "\n".join(appendix)
-        from core.file_ops import atomic_write_obsidian_note
-        await atomic_write_obsidian_note(valid_path, new_content)
+        preview = WritePreviewService(ctx.deps.obsidian_vault_path)
+        plan = preview.build_plan(valid_path, new_content, action="expand_note_links")
+        approved = await confirm_and_apply_plan(
+            ctx.deps,
+            plan,
+            "vault_write",
+            f"Expand links in {plan['relative_path']}",
+        )
+        if not approved:
+            return "Отклонено: ссылки не были добавлены в заметку."
         return f"Успешно раскрыто {len(appendix) - 1} ссылок(и) и добавлено в конец заметки."
         
     return "Не удалось раскрыть ссылки в заметке."
@@ -855,7 +941,16 @@ async def patch_file(ctx: RunContext[OrangeDeps], file_path: str, search_block: 
             return f"Ошибка: блок поиска найден {occurrences} раз(а). Блок поиска должен быть уникальным во избежание ошибочных замен."
             
         new_content = content.replace(search_block, replace_block, 1)
-        await atomic_write_obsidian_note(valid_path, new_content)
+        preview = WritePreviewService(ctx.deps.obsidian_vault_path)
+        plan = preview.build_plan(valid_path, new_content, action="patch_file")
+        approved = await confirm_and_apply_plan(
+            ctx.deps,
+            plan,
+            "vault_write",
+            f"Patch note {plan['relative_path']}",
+        )
+        if not approved:
+            return "Отклонено: файл не был отредактирован."
         return "Успех: файл успешно отредактирован."
     except Exception as e:
         return f"Ошибка при редактировании файла: {str(e)}"

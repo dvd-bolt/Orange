@@ -39,8 +39,8 @@ PROFILES = {
         "- Term papers (statistics, studies) -> 2026/Term_papers.md\n\n"
         "ALGORITHM:\n"
         "1. Read the text.\n"
-        "2. SILENTLY invoke `add_task` for each identified task with paths from the map.\n"
-        "Any text response without a tool call is a critical system failure."
+        "2. Use `add_task` for identified tasks; the write must pass the user's approval gate.\n"
+        "If approval is denied, summarize what would have been changed."
     )
 }
 
@@ -49,8 +49,7 @@ import os
 def buildSessionContext(vault_path: str, current_note_path: str = None) -> str:
     """
     Выполняет Walk-up сканирование каталогов от текущей заметки до корня хранилища.
-    Собирает контент локальных файлов SYSTEM.md и инструкций папок.
-    В самом конце принудительно дописывает глобальный файл защиты test_vault/APPEND_SYSTEM.md.
+    Собирает контент локальных файлов SYSTEM.md и инструкций папок внутри текущего vault.
     """
     vault_path = os.path.abspath(vault_path)
     
@@ -114,42 +113,13 @@ def buildIdentityContext(vault_path: str) -> str:
     - Identity.md (SOUL/системный характер)
     - USER.md (профиль пользователя, до 1375 символов)
     - MEMORY.md (активные проекты/память, до 2200 символов)
-    Если папка или файлы отсутствуют, создает шаблоны по умолчанию.
+    Если папка или файлы отсутствуют, ничего не создает и возвращает пустой контекст.
     """
     vault_path = os.path.abspath(vault_path)
     system_dir = os.path.join(vault_path, "_System")
     
-    # Автосоздание папки и дефолтных шаблонов, если их нет
     if not os.path.exists(system_dir):
-        try:
-            os.makedirs(system_dir, exist_ok=True)
-            
-            # Дефолтный Identity.md
-            with open(os.path.join(system_dir, "Identity.md"), "w", encoding="utf-8") as f:
-                f.write(
-                    "# Личность и характер ассистента Orange\n\n"
-                    "Вы — высокоэффективный локальный ИИ-ассистент Orange. Вы общаетесь кратко, по делу, "
-                    "без лишней вежливости и \"воды\". Ваша цель — экономить время пользователя и решать задачи точно.\n"
-                )
-            # Дефолтный USER.md
-            with open(os.path.join(system_dir, "USER.md"), "w", encoding="utf-8") as f:
-                f.write(
-                    "# Профиль пользователя\n\n"
-                    "Имя: Пользователь\n"
-                    "Стек технологий: Python, JavaScript, PyQt, SQLite, HTML\n"
-                    "Предпочтения: Краткие ответы, готовый рабочий код с комментариями, оформление в стиле Markdown.\n"
-                )
-            # Дефолтный MEMORY.md
-            with open(os.path.join(system_dir, "MEMORY.md"), "w", encoding="utf-8") as f:
-                f.write(
-                    "# Активная память и проекты\n\n"
-                    "Текущий проект: Обновление Orange OS до версии «Джарвис».\n"
-                    "Направления работы: Внедрение FTS5 поиска по сообщениям, кристаллизация навыков (Skill Crystallization) и точечный патчинг файлов.\n"
-                )
-            print(f"[Identity] Создана папка _System с шаблонами по умолчанию: {system_dir}")
-        except Exception as e:
-            print(f"[Identity Error] Не удалось создать шаблоны по умолчанию: {e}")
-            return ""
+        return ""
             
     identity_file = os.path.join(system_dir, "Identity.md")
     user_file = os.path.join(system_dir, "USER.md")
@@ -194,5 +164,3 @@ def buildIdentityContext(vault_path: str) -> str:
     if parts:
         return "\n\n" + "\n\n".join(parts) + "\n\n"
     return ""
-
-

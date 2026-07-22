@@ -6,6 +6,10 @@ import argparse
 import urllib.request
 import urllib.error
 
+def default_server_url():
+    port = os.environ.get("ORANGE_PORT", "8080")
+    return f"http://127.0.0.1:{port}"
+
 def query_orange(note_title, note_path, content, query_text, server_url):
     # If content is not explicitly provided, try to read it from the note_path
     if not content and note_path:
@@ -71,7 +75,7 @@ def main():
     parser.add_argument("--path", "-p", "--file", "-f", dest="path", help="Path to the active Obsidian note file on disk")
     parser.add_argument("--content", "-c", help="Direct text content of the note (optional)")
     parser.add_argument("--query", "-q", required=False, help="Query / question for the Pydantic AI agent")
-    parser.add_argument("--url", default="http://127.0.0.1:8080", help="Orange server URL (default: http://127.0.0.1:8080)")
+    parser.add_argument("--url", default=default_server_url(), help="Orange server URL (default: http://127.0.0.1:${ORANGE_PORT:-8080})")
     
     args = parser.parse_args()
     

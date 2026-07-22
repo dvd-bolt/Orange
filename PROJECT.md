@@ -1,69 +1,44 @@
-# Project: Jarvis Upgrade (Phases 2, 3, and 4)
+# Project: ORANGE `orangeV2`
 
-## Architecture
-The system consists of the following components:
-1. **Agent Core & FSM Graph** (`core/graph.py`):
-   - Implements `OrangeGraphState` transitions using `pydantic-graph`.
-   - Transitions are profile-specific: `base`, `coder`, `deep_research`, and `project_manager`.
-   - Node-level plan checkpointing serializes state into SQLite.
-2. **Scenario Engine & Context Condenser**:
-   - Parses declarative YAML/JSON scenarios defining sequential or conditional steps and tool calls.
-   - Condenses message context dynamically, protecting head (system prompt) and tail (recent messages) and summarizing the middle.
-3. **Unified Trigger Registry & Security Gate**:
-   - Central registry for `CronTrigger`, `FileWatchTrigger` (watchdog), and `WebhookTrigger`.
-   - Risk classification in `SecurityAnalyzer` blocks command execution/file writes outside the vault until PyQt UI confirmation is received.
-4. **Web Automation**:
-   - Playwright CDP integration attaches to active Chrome instances.
-   - Interactive DOM parser lists numbered interactive elements.
-   - Screen annotator generates visual markup of the viewport.
-5. **UI Integration**:
-   - Drawflow visualizes scenario topologies.
-   - Chat UI displays collapsible tool cards for cleaner logs.
+## Current Shape
 
-## Milestones
+ORANGE is a local-first AI workspace around an Obsidian vault. The `orangeV2`
+branch combines chat, vault search, pydantic-graph agent flow, Smart Inbox,
+Memory Editor, Knowledge Graph v2, Audit Log, Morning Dashboard, and Vault
+Intelligence views.
 
-| # | Name | Scope | Dependencies | Status |
-|---|------|-------|-------------|--------|
-| 1 | E2E Test Suite | Build opaque-box E2E test suite (Tiers 1-4) and generate `TEST_READY.md` | None | DONE |
-| 2 | Phase 2 Core | Profile Topologies, SQLite Checkpointing, Scenario Engine, Context Condenser | None | DONE |
-| 3 | Phase 3 Registry & Gate | Unified Trigger Registry, Security Gate, secure `.env` credential load | M2 | DONE |
-| 4 | Phase 3 Web Automation | Playwright CDP, DOM Parser, Vision Screen Annotator | M2 | DONE |
-| 5 | Phase 4 UI Integration | Drawflow visualizer, chat collapsible tool cards | M3, M4 | DONE |
-| 6 | Verification & Hardening | Pass 100% of E2E tests, run Tier 5 adversarial testing, write report | M1, M5 | DONE |
+## Runtime Architecture
 
-## Interface Contracts
+1. `main.py` loads settings, starts the background asyncio loop, binds the local
+   HTTP API from `ORANGE_PORT`, and stores the actual bound endpoint in
+   `BridgeAPI`.
+2. `BridgeAPI` exposes stable `api_*` methods to `ui/main.js` and delegates
+   chat, settings, attachment, agent, and vault feature work to services.
+3. `AgentRunner` stores messages in SQLite, folds history, injects vault
+   context, and runs the FSM in `core/graph.py`.
+4. Tools in `core/tools.py` perform vault reads, approved diff-based writes,
+   memory search, web research, and restricted Python execution.
+5. `mcp_servers/index.ts` exposes `list_notes`, `read_note`, and `write_note`
+   over stdio with resolved vault path validation.
 
-### ScenarioEngine ↔ Graph
-- Scenario YAML schema validation:
-  ```json
-  {
-    "name": "string",
-    "steps": [
-      {
-        "id": "string",
-        "action": "string",
-        "params": "dict",
-        "approval_required": "boolean"
-      }
-    ]
-  }
-  ```
-- Executed step-by-step by FSM graph, supporting conditional routing.
+## Implemented Product Areas
 
-### SecurityGate ↔ Bridge/PyQt UI
-- Risk assessment function: `analyze_risk(action_type: str, details: dict) -> str` (returns `"LOW"`, `"MEDIUM"`, `"HIGH"`)
-- Approval request API: `request_override(action_text: str) -> bool` (async, pops PyQt modal, blocks execution without freezing UI loop)
+- Stable local HTTP API: `/query`, `/api/graph`, `/api/note`.
+- Knowledge Graph v2: note preview, node types, orphan filtering, suggested
+  wikilinks.
+- Memory Editor: pin, exclude from RAG, delete.
+- Smart Inbox: file classification proposals and user-confirmed apply.
+- Morning Dashboard: today, overdue, Telegram, orphan notes, focus items.
+- Project Pages and Weekly Review: diff preview before writing.
+- Audit Log: approvals, backups, memory edits, inbox, and vault writes.
+- Vault Intelligence: Time Machine, Contradiction Finder, Agent Debate,
+  Dormant Radar, Operating Manual.
 
-### TriggerRegistry ↔ Agent Handler
-- Register trigger: `register_trigger(trigger_id: str, trigger_type: str, config: dict, callback: Callable)`
-- Triggers push events into agent execution queue.
+## Defaults
 
-## Code Layout
-- `core/graph.py` — Profile graph topologies and step checkpointing.
-- `core/scenario.py` — Scenario engine parser and runner.
-- `core/condenser.py` — Multi-phase context condenser.
-- `core/triggers.py` — Unified Trigger Registry.
-- `core/security.py` — Risk analysis and PyQt dialog integration.
-- `core/web_aut.py` — Playwright CDP, DOM parser, and annotator.
-- `ui/` — pywebview files (chat UI, Drawflow scenario editor).
-- `scratch/` — Unit and integration tests.
+- Python runtime: `3.11`.
+- HTTP port: `8080`, configurable through `ORANGE_PORT`.
+- Fixture vault: `examples/test_vault`.
+- Auto backup: `OFF`.
+- Auto push: `OFF`.
+- Dangerous writes and code execution require explicit user approval.

@@ -42,10 +42,10 @@ only after user confirmation.
 
 ## Diff Preview Before Writes
 
-Agent tools that rewrite notes, add tasks, export chats, or expand note links
-build a unified diff first and request explicit UI approval before applying the
-write. Generated Project Pages and Weekly Reviews are also shown as diff
-previews in the UI before writing to `_Orange/`.
+Agent tools that rewrite notes, add tasks, export chats, expand note links, or
+patch note content build a unified diff first and request explicit UI approval
+before applying the write. Generated Project Pages and Weekly Reviews are also
+shown as diff previews in the UI before writing to `_Orange/`.
 
 ## Audit Log
 

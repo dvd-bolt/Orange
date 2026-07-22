@@ -22,9 +22,6 @@
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 </head>
 <body class="bg-background text-on-background h-screen overflow-hidden flex font-body-lg">
-    <div class="crt-scanline"></div>
-    <div class="scanline"></div>
-
     <!-- SideNavBar -->
     <nav class="h-full w-sidebar-width border-r border-outline bg-background flex flex-col z-20 shrink-0">
         <!-- Header -->
@@ -109,7 +106,7 @@
                     <button onclick="setMode('coder')" id="mode-coder" class="mode-btn font-label-caps text-label-caps text-on-background hover:text-primary hover:border-primary border border-transparent px-4 py-2 transition-colors relative hover:z-10 hover:ring-1 hover:ring-primary hover:bg-transparent">CODER</button>
                 </div>
 
-                <div class="flex items-center gap-3">
+                <div class="flex items-center gap-2 flex-wrap justify-end">
                     <button onclick="openMorningDashboard()" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-2 py-1.5 hover:border-primary" title="Morning Dashboard">
                         <span class="material-symbols-outlined text-[16px]">dashboard</span>
                     </button>

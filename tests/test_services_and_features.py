@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import time
 
@@ -214,6 +215,7 @@ def test_bridge_public_api_contract_includes_new_methods():
         "api_apply_inbox_proposal",
         "api_get_morning_dashboard",
         "api_get_http_base_url",
+        "api_run_git_backup",
         "api_get_project_pages_preview",
         "api_apply_project_pages",
         "api_get_weekly_review_preview",
@@ -228,3 +230,43 @@ def test_bridge_public_api_contract_includes_new_methods():
 
     missing = [name for name in expected_methods if not hasattr(BridgeAPI, name)]
     assert missing == []
+
+
+def test_scenario_engine_blocks_traversal_and_unsafe_eval(tmp_path):
+    from core.scenario import ScenarioEngine
+
+    engine = ScenarioEngine(str(tmp_path))
+    class AllowDeps:
+        async def request_override(self, _text):
+            return True
+
+    scenario = {
+        "name": "safe",
+        "steps": [
+            {"id": "ctx", "action": "set_context", "params": {"ready": True}},
+            {"id": "route", "action": "conditional_route", "params": {"condition": "ready", "if_true": "END", "if_false": "END"}},
+        ],
+    }
+    result = asyncio.run(engine.run_scenario(json.dumps(scenario), deps=object()))
+    assert result["status"] == "success"
+
+    bad_path = {
+        "name": "bad_path",
+        "steps": [{"id": "write", "action": "write_file", "params": {"path": "../secret.md", "content": "x"}}],
+    }
+    result = asyncio.run(engine.run_scenario(json.dumps(bad_path), deps=AllowDeps()))
+    assert result["status"] == "error"
+
+    safe_write_without_approval = {
+        "name": "no_approval",
+        "steps": [{"id": "write", "action": "write_file", "params": {"path": "note.md", "content": "x"}}],
+    }
+    result = asyncio.run(engine.run_scenario(json.dumps(safe_write_without_approval), deps=object()))
+    assert result["status"] == "denied"
+
+    bad_eval = {
+        "name": "bad_eval",
+        "steps": [{"id": "eval", "action": "evaluate_expression", "params": {"expression": "__import__('os').system('echo no')"}}],
+    }
+    result = asyncio.run(engine.run_scenario(json.dumps(bad_eval), deps=object()))
+    assert result["status"] == "error"

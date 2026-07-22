@@ -60,7 +60,7 @@ import orange_core
 notes_json = orange_core.scan_vault_fast("C:/Users/user/ObsidianVault")
 
 # Чтение файла
-content = orange_core.read_file_fast("C:/orange/test_vault/MyNote.md")
+content = orange_core.read_file_fast("examples/test_vault/projects/roadmap.md")
 
 # HTTP запрос
 html = orange_core.fetch_website_fast("https://example.com")

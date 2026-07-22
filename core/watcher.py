@@ -29,14 +29,15 @@ class ObsidianWatcher(FileSystemEventHandler):
         
         if self.api._window:
             self.api._window.evaluate_js(
-                f"appendMessage('Система [Watchdog]', 'Обнаружено изменение в файле <b>{safe_filename}</b>. Запускаю фоновый анализ...', 'sys')"
+                f"appendMessage('Система [Watchdog]', 'Обнаружено изменение в файле <b>{safe_filename}</b>. Создаю предложение Smart Inbox...', 'sys')"
             )
             
-        # Запускаем агента для чтения файла в профиле project_manager (Распределение задач)
-        self.api.push_background_task("project_manager", file_path)
+        # Smart Inbox must propose actions first; file writes happen only after UI confirmation.
+        if hasattr(self.api, "propose_inbox_review"):
+            self.api.propose_inbox_review(file_path)
 
     def on_created(self, event):
-        pass
+        self.on_modified(event)
 
     def on_deleted(self, event):
         pass

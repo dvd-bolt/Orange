@@ -127,10 +127,10 @@ class DaemonManager:
         print(f"[DaemonManager] Получен триггер от {sender_info}: {text}")
         self._log_to_telemetry("TG", f"MSG_RCVD from {sender_info}: {text[:40]}...")
         
-        # Создаем заметку в test_vault
+        # Создаем заметку в настроенном vault
         try:
             vault_root = self.api._deps.obsidian_vault_path
-            inbox_dir = os.path.join(vault_root, "04-projects")
+            inbox_dir = os.path.join(vault_root, "_Inbox")
             os.makedirs(inbox_dir, exist_ok=True)
             
             filename = f"TG_Task_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
@@ -146,6 +146,8 @@ class DaemonManager:
             
             from core.file_ops import sync_atomic_write
             sync_atomic_write(filepath, note_content)
+            from core import db
+            db.add_audit_event("telegram", "applied", f"Telegram task captured: {filename}", note_content)
                 
             self._log_to_telemetry("OK", f"TASK_CREATED: {filename}")
             print(f"[DaemonManager] Создана заметка: {filepath}")

@@ -3,7 +3,8 @@
 ## Runtime Flow
 
 1. `main.py` loads `.env`, creates the background asyncio loop, loads settings,
-   indexes the Obsidian vault, and starts the local HTTP server.
+   starts the local HTTP server, and stores the actual bound endpoint in
+   `BridgeAPI`.
 2. `BridgeAPI` is attached to the `pywebview` window and exposes methods used by
    `ui/main.js`. It is intentionally a thin facade over services.
 3. The UI sends messages through `run_agent(profile, prompt, attachments)`.
@@ -27,8 +28,8 @@
 - Vault intelligence: `core/services/vault_intelligence_service.py`
 - Storage: SQLite through `core/db.py`
 - Vault search: BM25 plus optional Gemini embeddings
-- HTTP API: local `ThreadingHTTPServer` bound from `ORANGE_PORT`, exposing
-  `/query`, `/api/graph`, and `/api/note`
+- HTTP API: local `ThreadingHTTPServer` bound from `ORANGE_PORT` with fallback
+  to the next free port, exposing `/query`, `/api/graph`, and `/api/note`
 - MCP: `mcp_servers/index.ts`
 - Native acceleration: `orange_core/src/lib.rs`
 

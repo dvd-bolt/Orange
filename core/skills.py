@@ -4,8 +4,8 @@ import glob
 import json
 import asyncio
 from core import db
-from core.file_ops import atomic_write_obsidian_note
 from core.markdown_ops import read_note_cli
+from core.services.write_preview_service import WritePreviewService, confirm_and_apply_plan
 
 async def crystallize_skill(chat_id: str, deps, api_key: str):
     """
@@ -71,11 +71,18 @@ async def crystallize_skill(chat_id: str, deps, api_key: str):
         else:
             filename = f"Skill_{chat_id[:8]}.md"
             
-        skills_dir = os.path.join(vault_path, "_System", "Skills")
-        os.makedirs(skills_dir, exist_ok=True)
-        
-        filepath = os.path.join(skills_dir, filename)
-        await atomic_write_obsidian_note(filepath, skill_md)
+        filepath = os.path.join(vault_path, "_System", "Skills", filename)
+        preview = WritePreviewService(vault_path)
+        plan = preview.build_plan(filepath, skill_md, action="crystallize_skill")
+        approved = await confirm_and_apply_plan(
+            deps,
+            plan,
+            "skill_crystallization",
+            f"Crystallize skill {plan['relative_path']}",
+        )
+        if not approved:
+            print("[Skills] Кристаллизация навыка отклонена или недоступна без approval callback.")
+            return
         print(f"[Skills] Успешно кристаллизован новый навык: {filepath}")
         
     except Exception as e:

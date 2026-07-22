@@ -6,6 +6,12 @@ from typing import Dict, Any
 
 logger = logging.getLogger("security")
 
+def _is_inside(base_path: str, candidate_path: str) -> bool:
+    try:
+        return os.path.commonpath([base_path, candidate_path]) == base_path
+    except ValueError:
+        return False
+
 class SecurityAnalyzer:
     """
     SecurityAnalyzer classifies action risk and blocks unsafe executions.
@@ -32,7 +38,7 @@ class SecurityAnalyzer:
                 return "HIGH"
             abs_path = os.path.abspath(path)
             # If path is outside the vault, it is high risk
-            if not abs_path.startswith(self.vault_path):
+            if not _is_inside(self.vault_path, abs_path):
                 return "HIGH"
             return "LOW"
 
@@ -41,7 +47,7 @@ class SecurityAnalyzer:
             if not path:
                 return "HIGH"
             abs_path = os.path.abspath(path)
-            if not abs_path.startswith(self.vault_path):
+            if not _is_inside(self.vault_path, abs_path):
                 return "MEDIUM"
             return "LOW"
 

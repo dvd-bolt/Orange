@@ -320,13 +320,15 @@ class SelfReviewNode(BaseNode[OrangeGraphState, OrangeDeps, str]):
         ctx.state.output_text = ctx.state.draft_response
         await save_graph_state(ctx.state.session_id, "self_review_node", ctx.state)
         
-        # Trigger Git auto-backup
-        if ctx.deps.obsidian_vault_path:
+        # Trigger Git auto-backup only when explicitly enabled in runtime settings.
+        from core.runtime_settings import runtime_flag
+        if ctx.deps.obsidian_vault_path and runtime_flag("auto_backup_enabled", "OFF"):
             try:
                 from core.git_backup import auto_backup_vault
+                push_enabled = runtime_flag("auto_push_enabled", "OFF")
                 print(f"[FSM] Triggering automatic Git backup for vault: {ctx.deps.obsidian_vault_path}")
                 log_to_telemetry("EXEC", f"Git backup triggered for vault: {ctx.deps.obsidian_vault_path}")
-                backup_res = await auto_backup_vault(ctx.deps.obsidian_vault_path)
+                backup_res = await auto_backup_vault(ctx.deps.obsidian_vault_path, push=push_enabled)
                 print(f"[FSM] Git backup status: {backup_res}")
                 if isinstance(backup_res, dict):
                     backup_status = "OK" if backup_res.get("status") == "success" else "FAIL"
@@ -335,6 +337,8 @@ class SelfReviewNode(BaseNode[OrangeGraphState, OrangeDeps, str]):
                     backup_res_str = str(backup_res)
                     backup_status = "OK" if "success" in backup_res_str.lower() or "ok" in backup_res_str.lower() else "FAIL"
                     backup_msg = backup_res_str
+                from core import db
+                db.add_audit_event("git_backup", backup_status.lower(), backup_msg)
                 log_to_telemetry(backup_status, f"Git backup status: {backup_msg}")
             except Exception as e:
                 print(f"[FSM Warning] Failed to run Git backup: {e}")

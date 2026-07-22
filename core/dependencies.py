@@ -8,6 +8,5 @@ class OrangeDeps:
     """Зависимости, которые передаются в агента (context)."""
     settings: Settings
     mcp_client: ObsidianMCPClient
-    obsidian_vault_path: str = "test_vault"
+    obsidian_vault_path: str = "examples/test_vault"
     request_override: Optional[Callable[[str], Awaitable[bool]]] = None
-

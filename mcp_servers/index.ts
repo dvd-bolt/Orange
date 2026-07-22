@@ -12,22 +12,32 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { readFileSync, readdirSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { join, extname, dirname } from "path";
+import { dirname, extname, isAbsolute, relative, resolve } from "path";
 
-// Путь к Obsidian Vault (берём из .env или fallback к test_vault)
-const VAULT_PATH = process.env.OBSIDIAN_VAULT_PATH || "./test_vault";
+// Путь к Obsidian Vault (берём из .env или fallback к example fixture)
+const VAULT_PATH = process.env.OBSIDIAN_VAULT_PATH || "../examples/test_vault";
+const VAULT_ROOT = resolve(VAULT_PATH);
+
+function resolveVaultPath(notePath: string): string | null {
+  const fullPath = resolve(VAULT_ROOT, notePath);
+  const rel = relative(VAULT_ROOT, fullPath);
+  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) {
+    return fullPath;
+  }
+  return null;
+}
 
 // Рекурсивный обход директории — возвращает все .md файлы
 function getAllMarkdownFiles(dir: string, base: string = dir): string[] {
   const files: string[] = [];
   try {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const fullPath = join(dir, entry.name);
+      const fullPath = resolve(dir, entry.name);
       if (entry.isDirectory() && !entry.name.startsWith(".")) {
         files.push(...getAllMarkdownFiles(fullPath, base));
       } else if (entry.isFile() && extname(entry.name) === ".md") {
         // Возвращаем относительный путь от корня vault
-        files.push(fullPath.replace(base + "/", "").replace(base + "\\", ""));
+        files.push(relative(base, fullPath).replace(/\\/g, "/"));
       }
     }
   } catch (e) {
@@ -93,7 +103,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   if (name === "list_notes") {
-    const files = getAllMarkdownFiles(VAULT_PATH);
+    const files = getAllMarkdownFiles(VAULT_ROOT);
     return {
       content: [
         {
@@ -109,10 +119,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (!notePath) {
       return { content: [{ type: "text", text: "Ошибка: путь не указан" }], isError: true };
     }
-    // Path traversal защита: запрещаем выход за пределы vault
-    const fullPath = join(VAULT_PATH, notePath);
-    if (!fullPath.startsWith(VAULT_PATH)) {
+    const fullPath = resolveVaultPath(notePath);
+    if (!fullPath) {
       return { content: [{ type: "text", text: "Ошибка: запрещённый путь" }], isError: true };
+    }
+    if (extname(fullPath) !== ".md") {
+      return { content: [{ type: "text", text: "Ошибка: разрешены только .md заметки" }], isError: true };
     }
     if (!existsSync(fullPath)) {
       return { content: [{ type: "text", text: `Файл не найден: ${notePath}` }], isError: true };
@@ -131,10 +143,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (!notePath || content === undefined) {
       return { content: [{ type: "text", text: "Ошибка: путь или содержимое не указаны" }], isError: true };
     }
-    const fullPath = join(VAULT_PATH, notePath);
-    // Path traversal защита
-    if (!fullPath.startsWith(VAULT_PATH)) {
+    const fullPath = resolveVaultPath(notePath);
+    if (!fullPath) {
       return { content: [{ type: "text", text: "Ошибка: запрещённый путь" }], isError: true };
+    }
+    if (extname(fullPath) !== ".md") {
+      return { content: [{ type: "text", text: "Ошибка: разрешены только .md заметки" }], isError: true };
     }
     try {
       // Создаём директории если не существуют
@@ -152,4 +166,4 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // Запуск сервера через stdio транспорт
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error(`[ORANGE MCP] Сервер запущен. Vault: ${VAULT_PATH}`);
+console.error(`[ORANGE MCP] Сервер запущен. Vault: ${VAULT_ROOT}`);

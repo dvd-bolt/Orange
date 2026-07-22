@@ -14,7 +14,7 @@ class SettingsService:
 
     def __init__(self, deps: OrangeDeps = None, get_http_endpoint: Callable[[], Tuple[str, int]] = None):
         self._deps = deps
-        self._get_http_endpoint = get_http_endpoint or (lambda: ("127.0.0.1", 8000))
+        self._get_http_endpoint = get_http_endpoint or (lambda: ("127.0.0.1", 8080))
 
     def get_settings(self) -> Dict:
         return load_runtime_settings()
@@ -48,7 +48,8 @@ class SettingsService:
     def get_system_status(self) -> Dict:
         settings = get_settings()
         mcp_connected = (
-            self._deps.mcp_client is not None
+            self._deps is not None
+            and self._deps.mcp_client is not None
             and hasattr(self._deps.mcp_client, "_session")
             and self._deps.mcp_client._session is not None
         )
@@ -64,7 +65,8 @@ class SettingsService:
 
     def get_mcp_status(self) -> Dict:
         mcp_connected = (
-            self._deps.mcp_client is not None
+            self._deps is not None
+            and self._deps.mcp_client is not None
             and hasattr(self._deps.mcp_client, "_session")
             and self._deps.mcp_client._session is not None
         )

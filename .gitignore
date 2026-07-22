@@ -64,6 +64,8 @@ stitch_orange_terminal_interface/
 # Scratch / test files
 scratch/
 test_vault/
+!examples/test_vault/
+!examples/test_vault/**
 
 # Telegram session files
 config/orange_tg_session*

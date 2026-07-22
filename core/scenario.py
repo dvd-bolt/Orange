@@ -1,6 +1,8 @@
 import os
 import json
 import logging
+import ast
+from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 logger = logging.getLogger("scenario_engine")
@@ -124,6 +126,63 @@ class ScenarioEngine:
             if "approval_required" in step and not isinstance(step["approval_required"], bool):
                 raise ScenarioValidationError(f"Step '{step['id']}' 'approval_required' must be a boolean")
 
+    def _resolve_file_path(self, file_path: str) -> str:
+        base = Path(self.vault_path or ".").resolve()
+        candidate = Path(file_path)
+        if not candidate.is_absolute():
+            candidate = base / candidate
+        resolved = candidate.resolve()
+        if resolved != base and base not in resolved.parents:
+            raise ScenarioValidationError(f"Scenario path is outside vault: {file_path}")
+        return str(resolved)
+
+    def _safe_eval_expression(self, expression: str) -> Any:
+        """Evaluate simple constants, context names, booleans, and comparisons without eval()."""
+        tree = ast.parse(expression, mode="eval")
+
+        def eval_node(node):
+            if isinstance(node, ast.Expression):
+                return eval_node(node.body)
+            if isinstance(node, ast.Constant):
+                return node.value
+            if isinstance(node, ast.Name):
+                if node.id in self.context:
+                    return self.context[node.id]
+                raise ScenarioValidationError(f"Unknown scenario context name: {node.id}")
+            if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+                return not bool(eval_node(node.operand))
+            if isinstance(node, ast.BoolOp):
+                values = [bool(eval_node(value)) for value in node.values]
+                if isinstance(node.op, ast.And):
+                    return all(values)
+                if isinstance(node.op, ast.Or):
+                    return any(values)
+            if isinstance(node, ast.Compare):
+                left = eval_node(node.left)
+                for op, comparator in zip(node.ops, node.comparators):
+                    right = eval_node(comparator)
+                    if isinstance(op, ast.Eq):
+                        ok = left == right
+                    elif isinstance(op, ast.NotEq):
+                        ok = left != right
+                    elif isinstance(op, ast.Lt):
+                        ok = left < right
+                    elif isinstance(op, ast.LtE):
+                        ok = left <= right
+                    elif isinstance(op, ast.Gt):
+                        ok = left > right
+                    elif isinstance(op, ast.GtE):
+                        ok = left >= right
+                    else:
+                        raise ScenarioValidationError("Unsupported scenario comparison operator")
+                    if not ok:
+                        return False
+                    left = right
+                return True
+            raise ScenarioValidationError("Unsupported scenario expression")
+
+        return eval_node(tree)
+
     async def execute_step(self, step: Dict[str, Any], deps: Any) -> Dict[str, Any]:
         """Executes a single step in the scenario and returns status/outputs."""
         step_id = step["id"]
@@ -133,9 +192,13 @@ class ScenarioEngine:
         
         logger.info(f"Executing step {step_id}: {action} (approval_required={approval_required})")
         
-        # Check security gate if approval is required
-        if approval_required and hasattr(deps, "request_override") and deps.request_override:
-            approved = await deps.request_override(f"Execute step {step_id}: {action} with params {params}")
+        # Writes are always approval-gated when a UI callback is available.
+        requires_approval = approval_required or action == "write_file"
+        approval_callback = getattr(deps, "request_override", None)
+        if requires_approval and not approval_callback:
+            return {"status": "denied", "step_id": step_id, "error": "Approval callback is required for this action"}
+        if requires_approval:
+            approved = await approval_callback(f"Execute step {step_id}: {action} with params {params}")
             if not approved:
                 return {"status": "denied", "step_id": step_id, "error": "Approval denied by security gate"}
         
@@ -149,9 +212,7 @@ class ScenarioEngine:
                 filepath = params.get("path")
                 content = params.get("content", "")
                 if filepath:
-                    full_path = filepath
-                    if self.vault_path and not os.path.isabs(filepath):
-                        full_path = os.path.join(self.vault_path, filepath)
+                    full_path = self._resolve_file_path(filepath)
                     os.makedirs(os.path.dirname(full_path), exist_ok=True)
                     with open(full_path, "w", encoding="utf-8") as f:
                         f.write(content)
@@ -159,16 +220,13 @@ class ScenarioEngine:
             elif action == "read_file":
                 filepath = params.get("path")
                 if filepath:
-                    full_path = filepath
-                    if self.vault_path and not os.path.isabs(filepath):
-                        full_path = os.path.join(self.vault_path, filepath)
+                    full_path = self._resolve_file_path(filepath)
                     with open(full_path, "r", encoding="utf-8") as f:
                         data = f.read()
                     output["content"] = data
             elif action == "evaluate_expression":
                 expr = params.get("expression", "True")
-                # Evaluate expression with self.context
-                val = eval(expr, {}, self.context)
+                val = self._safe_eval_expression(expr)
                 output["result"] = val
             elif action == "set_context":
                 for k, v in params.items():
@@ -176,7 +234,7 @@ class ScenarioEngine:
                 output["context_updated"] = True
             elif action == "conditional_route":
                 condition = params.get("condition", "True")
-                val = eval(condition, {}, self.context)
+                val = self._safe_eval_expression(condition)
                 output["route_taken"] = params.get("if_true" if val else "if_false")
             else:
                 # Custom mock implementation for other tools
