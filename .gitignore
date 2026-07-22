@@ -28,6 +28,7 @@ MANIFEST
 .env
 .env.local
 .env.*
+!.env.example
 
 # Database
 *.db
@@ -61,15 +62,19 @@ node_modules/
 # Stitch / design reference files (not part of the runtime)
 stitch_orange_terminal_interface/
 
-# Scratch / test files
+# Scratch / runtime vault files
 scratch/
 test_vault/
+!examples/
+!examples/test_vault/
+!examples/test_vault/**
 
 # Telegram session files
 config/orange_tg_session*
 
 # Gemini / Agent internal state
 .agents/
+.orange_runtime/
 
 # Obsidian local folder
 .obsidian/
