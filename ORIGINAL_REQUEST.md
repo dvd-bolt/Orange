@@ -1,5 +1,7 @@
 # Original User Request
 
+> Архив исходных требований. Этот файл сохраняется только как история и не описывает текущую реализацию.
+
 ## Initial Request — 2026-06-08T02:12:00+03:00
 
 Implement three stages of features for the local AI agent "ORANGE" to support Obsidian integration, a background Telegram worker daemon, and a robust system audit.

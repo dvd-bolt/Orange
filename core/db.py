@@ -2,6 +2,7 @@ import os
 import sqlite3
 import uuid
 import threading
+import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
@@ -9,6 +10,17 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DB_NAME = "orange_memory_test.db" if os.environ.get("ORANGE_TEST_MODE") == "1" else "orange_memory.db"
 DB_PATH = os.path.join(PROJECT_ROOT, DB_NAME)
 _lock = threading.Lock()
+MAX_AUDIT_DETAILS_CHARS = 4000
+SECRET_PATTERN = re.compile(
+    r"(?i)(api[_-]?key|authorization|bearer|token|secret)([\"'\\s:=]+)([^\\s,\"']+)"
+)
+BARE_SECRET_PATTERN = re.compile(
+    r"\b(?:ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|"
+    r"AIza[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9_-]{20,})\b"
+)
+AUTHORIZATION_PATTERN = re.compile(
+    r"(?i)\bauthorization\s*[:=]\s*(?:bearer\s+)?[^\s,;]+"
+)
 
 def get_connection():
     # Используем check_same_thread=False, т.к. будем обращаться из разных потоков (asyncio/pywebview)
@@ -65,9 +77,16 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS message_embeddings (
                     message_id INTEGER PRIMARY KEY,
                     embedding TEXT,
+                    model_name TEXT DEFAULT '',
                     FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
                 )
             ''')
+            try:
+                conn.execute(
+                    "ALTER TABLE message_embeddings ADD COLUMN model_name TEXT DEFAULT ''"
+                )
+            except sqlite3.OperationalError:
+                pass
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS note_embeddings (
                     file_path TEXT PRIMARY KEY,
@@ -148,10 +167,13 @@ def delete_chat(chat_id: str) -> bool:
     with _lock:
         with get_connection() as conn:
             # Сначала удаляем сообщения чата из FTS5 индекса
-            conn.execute(
-                "DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE chat_id = ?)",
-                (chat_id,)
-            )
+            try:
+                conn.execute(
+                    "DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE chat_id = ?)",
+                    (chat_id,)
+                )
+            except sqlite3.OperationalError:
+                pass
             conn.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
             conn.commit()
     return True
@@ -189,7 +211,7 @@ def get_chat_history(chat_id: str) -> List[Dict[str, Any]]:
     """Возвращает историю сообщений конкретного чата"""
     with get_connection() as conn:
         cursor = conn.execute(
-            "SELECT * FROM messages WHERE chat_id = ? ORDER BY timestamp ASC",
+            "SELECT * FROM messages WHERE chat_id = ? ORDER BY timestamp ASC, id ASC",
             (chat_id,)
         )
         return [dict(row) for row in cursor.fetchall()]
@@ -275,6 +297,10 @@ def delete_message(message_id: int) -> bool:
     with _lock:
         with get_connection() as conn:
             conn.execute("DELETE FROM message_embeddings WHERE message_id = ?", (message_id,))
+            try:
+                conn.execute("DELETE FROM messages_fts WHERE rowid = ?", (message_id,))
+            except sqlite3.OperationalError:
+                pass
             cursor = conn.execute("DELETE FROM messages WHERE id = ?", (message_id,))
             conn.commit()
             return cursor.rowcount > 0
@@ -283,11 +309,13 @@ def delete_message(message_id: int) -> bool:
 
 def add_audit_event(event_type: str, status: str, summary: str, details: str = "") -> int:
     """Adds an auditable action/proposal record."""
+    safe_summary = _sanitize_audit_text(summary, 500)
+    safe_details = _sanitize_audit_text(details, MAX_AUDIT_DETAILS_CHARS)
     with _lock:
         with get_connection() as conn:
             cursor = conn.execute(
                 "INSERT INTO audit_log (event_type, status, summary, details) VALUES (?, ?, ?, ?)",
-                (event_type, status, summary, details)
+                (event_type, status, safe_summary, safe_details)
             )
             conn.commit()
             return int(cursor.lastrowid)
@@ -301,25 +329,59 @@ def list_audit_events(limit: int = 200) -> List[Dict[str, Any]]:
         )
         return [dict(row) for row in cursor.fetchall()]
 
+
+def _sanitize_audit_text(value: Any, limit: int) -> str:
+    text = str(value or "")
+    text = AUTHORIZATION_PATTERN.sub("Authorization: [REDACTED]", text)
+    text = SECRET_PATTERN.sub(lambda match: f"{match.group(1)}{match.group(2)}[REDACTED]", text)
+    text = BARE_SECRET_PATTERN.sub("[REDACTED]", text)
+    if len(text) > limit:
+        return text[:limit] + "\n...[truncated]"
+    return text
+
 # Инициализируем БД при импорте модуля
 init_db()
 
 # --- CRUD для кэширования эмбеддингов ---
 
-def get_cached_embedding(message_id: int) -> Optional[str]:
+def get_cached_embedding(
+    message_id: int,
+    model_name: Optional[str] = None,
+) -> Optional[str]:
     """Возвращает кэшированный эмбеддинг для сообщения в виде JSON-строки"""
     with get_connection() as conn:
-        cursor = conn.execute("SELECT embedding FROM message_embeddings WHERE message_id = ?", (message_id,))
+        if model_name is None:
+            cursor = conn.execute(
+                "SELECT embedding FROM message_embeddings WHERE message_id = ?",
+                (message_id,),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                SELECT embedding
+                FROM message_embeddings
+                WHERE message_id = ? AND model_name = ?
+                """,
+                (message_id, model_name),
+            )
         row = cursor.fetchone()
         return row["embedding"] if row else None
 
-def save_cached_embedding(message_id: int, embedding_json: str):
+def save_cached_embedding(
+    message_id: int,
+    embedding_json: str,
+    model_name: str = "",
+):
     """Сохраняет эмбеддинг для сообщения в кэш"""
     with _lock:
         with get_connection() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO message_embeddings (message_id, embedding) VALUES (?, ?)",
-                (message_id, embedding_json)
+                """
+                INSERT OR REPLACE INTO message_embeddings
+                    (message_id, embedding, model_name)
+                VALUES (?, ?, ?)
+                """,
+                (message_id, embedding_json, str(model_name or "")),
             )
             conn.commit()
 

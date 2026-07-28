@@ -19,11 +19,12 @@
     <script src="https://d3js.org/d3.v7.min.js"></script>
     
     <!-- Tailwind CSS CDN -->
+    <script src="tailwind.config.js"></script>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 </head>
 <body class="bg-background text-on-background h-screen overflow-hidden flex font-body-lg">
     <!-- SideNavBar -->
-    <nav class="h-full w-sidebar-width border-r border-outline bg-background flex flex-col z-20 shrink-0">
+    <nav id="primary-sidebar" class="h-full w-sidebar-width border-r border-outline bg-background flex flex-col z-20 shrink-0">
         <!-- Header -->
         <div class="p-gutter border-b border-outline">
             <div class="flex items-center gap-3 mb-2">
@@ -87,11 +88,11 @@
                     <div class="flex-1 bg-primary"></div>
                     <div class="flex-1 bg-transparent"></div>
                 </div>
-                <div class="font-label-mono text-xs text-primary animate-pulse">[+] FILE_SYNCED: log_export_v4.md</div>
+                <div class="font-label-mono text-xs text-primary animate-pulse">[+] FILE_SYNCED</div>
             </div>
 
             <!-- TopAppBar -->
-            <header class="flex justify-between items-center h-20 px-margin-page border-b border-outline bg-background shrink-0 w-full">
+            <header class="orange-topbar flex justify-between items-center h-20 px-margin-page border-b border-outline bg-background shrink-0 w-full">
                 <!-- Left Actions -->
                 <button onclick="exportChat()" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-3 py-1.5 hover:border-primary">
                     <span class="material-symbols-outlined text-[16px]">description</span>
@@ -99,14 +100,14 @@
                 </button>
 
                 <!-- Mode Selector -->
-                <div class="flex border border-outline" id="mode-selector">
+                <div class="orange-mode-selector flex border border-outline" id="mode-selector">
                     <button onclick="setMode('auto')" id="mode-auto" class="mode-btn font-label-caps text-label-caps bg-primary text-on-primary-container px-4 py-2 border-r border-outline relative z-10">AUTO</button>
                     <button onclick="setMode('base')" id="mode-base" class="mode-btn font-label-caps text-label-caps text-on-background hover:text-primary hover:border-primary border border-transparent border-r-outline px-4 py-2 transition-colors relative hover:z-10 hover:ring-1 hover:ring-primary hover:bg-transparent">BASE</button>
                     <button onclick="setMode('deep_research')" id="mode-deep_research" class="mode-btn font-label-caps text-label-caps text-on-background hover:text-primary hover:border-primary border border-transparent border-r-outline px-4 py-2 transition-colors relative hover:z-10 hover:ring-1 hover:ring-primary hover:bg-transparent">DEEP RESEARCH</button>
                     <button onclick="setMode('coder')" id="mode-coder" class="mode-btn font-label-caps text-label-caps text-on-background hover:text-primary hover:border-primary border border-transparent px-4 py-2 transition-colors relative hover:z-10 hover:ring-1 hover:ring-primary hover:bg-transparent">CODER</button>
                 </div>
 
-                <div class="flex items-center gap-2 flex-wrap justify-end">
+                <div class="orange-quick-actions flex items-center gap-2 flex-wrap justify-end">
                     <button onclick="openMorningDashboard()" class="font-label-caps text-label-caps text-on-background hover:text-primary transition-colors flex items-center gap-2 border border-outline px-2 py-1.5 hover:border-primary" title="Morning Dashboard">
                         <span class="material-symbols-outlined text-[16px]">dashboard</span>
                     </button>
@@ -155,7 +156,7 @@
                             <span data-i18n="welcome_title">SYSTEM_LOG</span>
                         </div>
                         <div class="font-body-lg text-body-lg text-on-background space-y-4 markdown-body">
-                            <p data-i18n="welcome_desc">Welcome to <strong>Orange OS</strong>. The computing kernel has been successfully linked with the local SQLite memory.</p>
+                            <p data-i18n="welcome_desc">Welcome to Orange OS. The computing kernel has been successfully linked with the local SQLite memory.</p>
                             <ul>
                                 <li data-i18n="welcome_bullet1">Select a chat from the sidebar or create a new session.</li>
                                 <li data-i18n="welcome_bullet2">The AI agent automatically maintains conversation context.</li>
@@ -223,60 +224,8 @@
                 <button onclick="toggleTelemetry()" class="text-on-surface hover:text-primary material-symbols-outlined text-[20px] transition-colors">close</button>
             </div>
             <div class="flex-1 overflow-y-auto p-4 space-y-3 font-mono text-xs">
-                <div class="flex gap-3 telemetry-log-row items-start">
-                    <span class="text-primary/50 font-mono text-[10px] pt-0.5 shrink-0">[14:21:44]</span>
-                    <span class="text-[#00FF66] border border-[#00FF66]/20 bg-[#00FF66]/5 px-1 py-0.2 text-[9px] font-bold tracking-widest shrink-0">CONN</span>
-                    <span class="text-white/95 flex-1 font-mono text-xs break-words">INIT_TCP_CONNECTION: 10.0.2.45...</span>
-                </div>
-                <div class="flex gap-3 telemetry-log-row items-start">
-                    <span class="text-primary/50 font-mono text-[10px] pt-0.5 shrink-0">[14:21:45]</span>
-                    <span class="text-[#00FF66] border border-[#00FF66]/20 bg-[#00FF66]/5 px-1 py-0.2 text-[9px] font-bold tracking-widest shrink-0">OK</span>
-                    <span class="text-white/95 flex-1 font-mono text-xs break-words">ACK_RCVD: Latency 142ms</span>
-                </div>
-                <div class="flex gap-3 telemetry-log-row items-start">
-                    <span class="text-primary/50 font-mono text-[10px] pt-0.5 shrink-0">[14:21:50]</span>
-                    <span class="text-primary border border-primary/20 bg-primary/5 px-1 py-0.2 text-[9px] font-bold tracking-widest shrink-0">EXEC</span>
-                    <span class="text-white/95 flex-1 font-mono text-xs break-words">EXEC_PYTHON: Compiling bytecode...</span>
-                </div>
-                <div class="flex gap-3 telemetry-log-row items-start bg-yellow-950/5 border-l border-yellow-600/30 pl-2">
-                    <span class="text-yellow-500/60 font-mono text-[10px] pt-0.5 shrink-0">[14:22:01]</span>
-                    <span class="text-yellow-500 border border-yellow-500/20 bg-yellow-500/5 px-1 py-0.2 text-[9px] font-bold tracking-widest shrink-0">WARN</span>
-                    <span class="text-yellow-200/95 flex-1 font-mono text-xs break-words">Node 112 timeout vector detected.</span>
-                </div>
-                <div class="flex gap-3 telemetry-log-row items-start">
-                    <span class="text-primary/50 font-mono text-[10px] pt-0.5 shrink-0">[14:22:05]</span>
-                    <span class="text-primary border border-primary/20 bg-primary/5 px-1 py-0.2 text-[9px] font-bold tracking-widest shrink-0">EXEC</span>
-                    <span class="text-white/95 flex-1 font-mono text-xs break-words">EXEC_PYTHON: Analyzing traceback...</span>
-                </div>
-                <div class="flex gap-3 telemetry-log-row items-start">
-                    <span class="text-primary/50 font-mono text-[10px] pt-0.5 shrink-0">[14:22:12]</span>
-                    <span class="text-cyan-400 border border-cyan-400/20 bg-cyan-400/5 px-1 py-0.2 text-[9px] font-bold tracking-widest shrink-0">MEM</span>
-                    <span class="text-white/95 flex-1 font-mono text-xs break-words">MEM_ALLOC: +4.2MB heap</span>
-                </div>
-                <div class="flex gap-3 telemetry-log-row items-start">
-                    <span class="text-primary/50 font-mono text-[10px] pt-0.5 shrink-0">[14:22:15]</span>
-                    <span class="text-primary border border-primary/20 bg-primary/5 px-1 py-0.2 text-[9px] font-bold tracking-widest shrink-0 animate-pulse">WAIT</span>
-                    <span class="text-white/95 flex-1 font-mono text-xs break-words animate-pulse">AWAITING_DIRECTIVE...</span>
-                </div>
-                
-                <!-- Critical Error Block -->
-                <div class="border border-red-950 bg-red-950/10 p-3 mt-4 overflow-hidden max-w-full flex flex-col gap-3">
-                    <!-- Error Metadata Header -->
-                    <div class="flex gap-2 items-center flex-wrap">
-                        <span class="text-red-500 font-bold text-[10px]">[21:04:12]</span>
-                        <span class="bg-red-950/30 text-red-500 border border-red-900/40 px-1.5 py-0.5 text-[9px] font-bold tracking-widest">CRITICAL_FAILURE</span>
-                    </div>
-                    <!-- Error Title / Summary -->
-                    <div class="text-white font-semibold text-xs break-words">
-                        Subprocess execution failed in Coder module.
-                    </div>
-                    <!-- Traceback Console -->
-                    <pre class="text-red-300/90 font-mono text-[11px] p-3 bg-black border border-red-950 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed rounded-none shadow-inner w-full max-w-full block">Traceback (most recent call last):
-  File "/agent/modules/coder.py", line 142, in execute_payload
-    result = subprocess.run(cmd, check=True, capture_output=True)
-  File "/usr/lib/python3.10/subprocess.py", line 526, in run
-    raise CalledProcessError(retcode, process.args,
-subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned non-zero exit status 1.</pre>
+                <div id="telemetry-empty-state" class="border border-outline p-3 text-on-surface-variant">
+                    Реальные системные события появятся здесь.
                 </div>
             </div>
         </aside>
@@ -300,9 +249,15 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
             </div>
             <!-- Panel: API & AUTH (default visible) -->
             <div id="settings-panel-api" class="space-y-4">
-                <div>
-                    <label class="text-[10px] text-on-surface-variant block mb-1">AUTH_TOKEN_HASH</label>
-                    <input id="setting-auth-token" class="w-full bg-transparent border-0 border-b border-outline-variant text-body-sm font-label-mono py-1 focus:ring-0" type="password" value="************************"/>
+                <div class="grid grid-cols-1 gap-2">
+                    <div class="flex justify-between items-center border border-outline p-2">
+                        <span class="font-label-mono text-[10px]">GOOGLE_API_KEY</span>
+                        <span id="status-google-api" class="font-label-mono text-[10px] text-on-surface-variant">LOADING...</span>
+                    </div>
+                    <div class="flex justify-between items-center border border-outline p-2">
+                        <span class="font-label-mono text-[10px]">OPENROUTER_API_KEY</span>
+                        <span id="status-openrouter-api" class="font-label-mono text-[10px] text-on-surface-variant">LOADING...</span>
+                    </div>
                 </div>
                 <div class="flex justify-between items-center py-2">
                     <span class="font-label-mono text-label-mono">TELEMETRY_STREAM</span>
@@ -359,7 +314,7 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
                 </div>
                 <div class="flex justify-between items-center p-2 border border-outline">
                     <span class="font-label-mono text-[11px]">TELEGRAM_DAEMON</span>
-                    <span id="status-telegram" class="text-[#00FF66] text-[10px] font-bold">MOCK</span>
+                    <span id="status-telegram" class="text-on-surface-variant text-[10px] font-bold">OFF</span>
                 </div>
                 <div class="flex justify-between items-center p-2 border border-outline">
                     <span class="font-label-mono text-[11px]">MCP_CLIENT</span>
@@ -447,7 +402,7 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
         <div class="w-full max-w-5xl max-h-[84vh] border border-outline-variant p-6 bg-surface flex flex-col gap-4 relative">
             <div class="flex justify-between items-center border-b border-outline-variant pb-2">
                 <h2 class="font-label-caps text-label-caps text-primary">[PROJECT_PAGES_DIFF_PREVIEW]</h2>
-                <button onclick="closeModal('project-pages-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+                <button onclick="rejectProjectPages()" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
             </div>
             <div id="project-pages-content" class="overflow-y-auto space-y-3 pr-1"></div>
             <div class="flex justify-end">
@@ -461,7 +416,7 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
         <div class="w-full max-w-5xl max-h-[84vh] border border-outline-variant p-6 bg-surface flex flex-col gap-4 relative">
             <div class="flex justify-between items-center border-b border-outline-variant pb-2">
                 <h2 class="font-label-caps text-label-caps text-primary">[WEEKLY_REVIEW_DIFF_PREVIEW]</h2>
-                <button onclick="closeModal('weekly-review-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+                <button onclick="rejectWeeklyReview()" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
             </div>
             <div id="weekly-review-content" class="overflow-y-auto space-y-3 pr-1"></div>
             <div class="flex justify-end">
@@ -507,7 +462,7 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
                     <span class="material-symbols-outlined font-bold">priority_high</span>
                     <h2 class="font-label-caps text-label-caps" data-i18n="title_override">SYSTEM_MODIFICATION_DETECTED</h2>
                 </div>
-                <button onclick="closeModal('execution-override-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+                <button onclick="handleOverrideResponse(false)" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
             </div>
             <div id="execution-command-container" class="bg-[#0A0A0A] border border-outline-variant p-3 font-label-mono text-[10px] overflow-x-auto overflow-y-auto max-h-[50vh] whitespace-pre-wrap break-all text-error leading-relaxed">
                 <!-- Command will be inserted here -->
@@ -535,7 +490,7 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
                     <span class="material-symbols-outlined">description</span>
                     <h2 class="font-label-caps text-label-caps" data-i18n="heavy_payload_title">HEAVY_PAYLOAD_DETECTED</h2>
                 </div>
-                <button onclick="closeModal('attachment-config-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
+                <button onclick="cancelPdfAttachment()" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
             </div>
             <p id="pdf-config-filename" class="text-on-surface-variant text-[10px] font-label-mono">SOURCE: —</p>
             <input type="hidden" id="pdf-page-count" value="1"/>
@@ -553,45 +508,13 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
                     placeholder="e.g. 1-10" data-i18n-placeholder="pdf_range_placeholder" type="text"/>
             </div>
             <div class="flex gap-2 mt-2">
-                <button onclick="closeModal('attachment-config-modal')" class="flex-1 py-2 border border-outline-variant text-on-surface font-bold text-label-caps hover:bg-surface-variant transition-colors" data-i18n="btn_cancel">CANCEL</button>
+                <button onclick="cancelPdfAttachment()" class="flex-1 py-2 border border-outline-variant text-on-surface font-bold text-label-caps hover:bg-surface-variant transition-colors" data-i18n="btn_cancel">CANCEL</button>
                 <button onclick="confirmPdfAttachment()" class="flex-1 py-2 bg-primary text-on-primary font-bold text-label-caps hover:bg-primary/80 transition-colors" data-i18n="btn_confirm">CONFIRM</button>
             </div>
         </div>
     </div>
 
-    <!-- 6. IN-LINE ELEMENTS & CODE ACTIONS Modal -->
-    <div id="inline-assets-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm hidden">
-        <div class="w-full max-w-md border border-outline-variant p-6 bg-surface flex flex-col gap-6 relative">
-            <div class="flex justify-between items-center border-b border-outline-variant pb-2">
-                <h2 class="font-label-caps text-label-caps text-primary" data-i18n="inline_assets_title">[IN_LINE_ASSETS_&amp;_ACTIONS]</h2>
-                <button onclick="closeModal('inline-assets-modal')" class="material-symbols-outlined text-on-surface text-sm hover:text-primary">close</button>
-            </div>
-            <div>
-                <h2 class="font-label-caps text-label-caps text-primary border-b border-outline-variant pb-2 mb-4" data-i18n="in_line_assets">IN_LINE_ASSETS</h2>
-                <div class="flex flex-wrap gap-2" id="inline-assets-list">
-                    <!-- Dynamic content -->
-                </div>
-            </div>
-            <div>
-                <h2 class="font-label-caps text-label-caps text-primary border-b border-outline-variant pb-2 mb-4" data-i18n="code_block_actions_title">CODE_BLOCK_ACTIONS</h2>
-                <div class="border border-outline-variant overflow-hidden">
-                    <div class="bg-outline-variant/30 px-3 py-1 flex justify-between items-center">
-                        <span class="text-[10px] font-label-mono opacity-60" id="inline-code-lang">PYTHON_CORE</span>
-                        <div class="flex gap-2">
-                            <button id="inline-copy-btn" class="text-[10px] font-bold text-on-background hover:text-primary" data-i18n="btn_copy">[ COPY ]</button>
-                            <button id="inline-execute-btn" onclick="executeCodeFromModal(document.getElementById('inline-code-content').textContent)" class="text-[10px] font-bold text-primary hover:text-white" data-i18n="btn_execute">[ EXECUTE ]</button>
-                        </div>
-                    </div>
-                    <div id="inline-code-content" class="p-3 font-label-mono text-[10px] whitespace-pre-wrap break-all">
-                        <span class="text-primary">def</span> <span class="text-on-background">initialize_protocol</span>():<br/>
-                        &nbsp;&nbsp;&nbsp;&nbsp;print(<span class="text-on-surface-variant">"ORANGE_OS_ACTIVE"</span>)
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 7. COMMAND_PALETTE -->
+    <!-- 6. COMMAND_PALETTE -->
     <div id="command-palette-modal" class="fixed inset-0 z-[9998] hidden bg-black bg-opacity-75 backdrop-blur-sm">
         <div class="w-full max-w-xl mx-auto mt-24 border border-outline-variant bg-surface p-3 shadow-2xl">
             <div class="flex items-center gap-2 border-b border-outline-variant pb-2">
@@ -607,6 +530,11 @@ subprocess.CalledProcessError: Command '['python3', 'temp_script.py']' returned 
     </div>
 
     <!-- Application Script -->
+    <script src="bridge_client.js"></script>
+    <script src="chat.js"></script>
+    <script src="settings.js"></script>
+    <script src="feature_dialogs.js"></script>
+    <script src="graph.js"></script>
     <script src="main.js"></script>
 </body>
 </html>

@@ -4,25 +4,20 @@ from core.dependencies import OrangeDeps
 from core import tools
 
 import os
-import subprocess
-import time
-import asyncio
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 if "GOOGLE_API_KEY" in os.environ and "GEMINI_API_KEY" not in os.environ:
     os.environ["GEMINI_API_KEY"] = os.environ["GOOGLE_API_KEY"]
 
-LITE_MODEL = 'google:gemini-3.1-flash-lite'
-HEAVY_MODEL = 'google:gemini-3.1-flash-lite'
-
-_heavy_limiter_lock = None
-_lite_limiter_lock = None
-_last_heavy_time = 0.0
-_last_lite_time = 0.0
+LITE_MODEL = os.environ.get("ORANGE_LITE_MODEL", "google:gemini-3.5-flash-lite")
+HEAVY_MODEL = os.environ.get("ORANGE_HEAVY_MODEL", "google:gemini-3.6-flash")
+SAFE_AGENT_MCP_TOOLS = {"list_notes", "read_note"}
 
 def get_openrouter_model(model_name: str) -> OpenAIChatModel:
     api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is not configured.")
     provider = OpenRouterProvider(api_key=api_key)
     return OpenAIChatModel(
         model_name,
@@ -38,20 +33,26 @@ class OrangeAgent(Agent):
         model=None,
         message_history=None,
         model_settings=None,
+        instructions=None,
         usage=None,
+        metadata=None,
         **kwargs
     ):
-        # 1. Check if it's the CODER profile
-        is_coder = False
-        if model_settings and "system_prompt" in model_settings:
-            sys_prompt = model_settings["system_prompt"]
-            if "Coder mode" in sys_prompt:
-                is_coder = True
+        instructions_text = _instructions_text(instructions)
+        run_metadata = metadata if isinstance(metadata, dict) else {}
+        is_coder = run_metadata.get("orange_profile") == "coder" or (
+            not run_metadata.get("orange_profile")
+            and ("Coder mode" in instructions_text or "CODER PROFILE" in instructions_text)
+        )
+        openrouter_key = os.environ.get("OPENROUTER_API_KEY")
 
-        if is_coder:
-            # Route to OpenRouter free coder models with cascade failover
-            coder_models = ["qwen/qwen3-coder:free", "nex-agi/nex-n2-pro:free", "openrouter/free"]
-            last_err = None
+        configured = os.environ.get("ORANGE_CODER_MODELS", "")
+        coder_models = [
+            name.strip()
+            for name in configured.split(",")
+            if name.strip()
+        ]
+        if is_coder and openrouter_key and coder_models:
             for coder_m_name in coder_models:
                 try:
                     print(f"[ModelRouter] Routing CODER profile to OpenRouter model: {coder_m_name}")
@@ -62,67 +63,48 @@ class OrangeAgent(Agent):
                         model=m,
                         message_history=message_history,
                         model_settings=model_settings,
+                        instructions=instructions,
                         usage=usage,
+                        metadata=metadata,
                         **kwargs
                     )
                 except Exception as e:
-                    print(f"[ModelRouter Warning] Coder model {coder_m_name} failed: {e}")
-                    last_err = e
-            # If all failed, throw the error
-            raise last_err or RuntimeError("All free OpenRouter coder models failed.")
+                    print(
+                        f"[ModelRouter Warning] Coder model {coder_m_name} failed: "
+                        f"{type(e).__name__}"
+                    )
+            print("[ModelRouter] Configured coder models failed; falling back to the per-run primary model.")
 
-        # 2. Base / RAG profile with Automatic Failover for Gemini 429/503
         try:
-            # Map default model names to google: prefix if not present to avoid deprecation warnings
             target_model = model
             if isinstance(target_model, str):
                 if target_model == 'gemini-3.1-flash-lite':
                     target_model = LITE_MODEL
-                elif target_model in ('gemini-3.1-pro-preview', 'gemini-3.5-flash'):
+                elif target_model in ('gemini-3.1-flash', 'gemini-3.1-pro-preview', 'gemini-3.5-flash'):
                     target_model = HEAVY_MODEL
-            
-            # Local Rate Limiter checks before calling Google API
-            global _heavy_limiter_lock, _lite_limiter_lock
-            if _heavy_limiter_lock is None:
-                _heavy_limiter_lock = asyncio.Lock()
-            if _lite_limiter_lock is None:
-                _lite_limiter_lock = asyncio.Lock()
-                
-            resolved_model = target_model or self.model
-            if resolved_model == HEAVY_MODEL:
-                async with _heavy_limiter_lock:
-                    global _last_heavy_time
-                    now = time.time()
-                    elapsed = now - _last_heavy_time
-                    if elapsed < 12.0:
-                        sleep_time = 12.0 - elapsed
-                        print(f"[COOLING_DOWN] Оптимизация частоты для Heavy-модели. Пауза {sleep_time:.2f}с...")
-                        await asyncio.sleep(sleep_time)
-                    _last_heavy_time = time.time()
-            elif resolved_model == LITE_MODEL:
-                async with _lite_limiter_lock:
-                    global _last_lite_time
-                    now = time.time()
-                    elapsed = now - _last_lite_time
-                    if elapsed < 4.0:
-                        sleep_time = 4.0 - elapsed
-                        await asyncio.sleep(sleep_time)
-                    _last_lite_time = time.time()
-            
+
             return await super().run(
                 user_prompt,
                 deps=deps,
                 model=target_model,
                 message_history=message_history,
                 model_settings=model_settings,
+                instructions=instructions,
                 usage=usage,
+                metadata=metadata,
                 **kwargs
             )
         except Exception as e:
             err_str = str(e).lower()
             if "429" in err_str or "resource exhausted" in err_str or "resource_exhausted" in err_str or "503" in err_str:
-                print(f"[ModelRouter] Gemini returned 429/503. Starting cascade failover to OpenRouter...")
-                failover_models = ["google/gemma-4-26b-a4b-it:free", "meta-llama/llama-3.3-70b-instruct:free"]
+                failover_models = [
+                    name.strip()
+                    for name in os.environ.get("ORANGE_FAILOVER_MODELS", "openrouter/free").split(",")
+                    if name.strip()
+                ]
+                if not openrouter_key:
+                    raise
+                print("[ModelRouter] Primary provider returned 429/503. Starting configured failover.")
                 for f_model in failover_models:
                     try:
                         print(f"[ModelRouter] Routing to failover OpenRouter model: {f_model}")
@@ -133,13 +115,26 @@ class OrangeAgent(Agent):
                             model=m,
                             message_history=message_history,
                             model_settings=model_settings,
+                            instructions=instructions,
                             usage=usage,
+                            metadata=metadata,
                             **kwargs
                         )
                     except Exception as fe:
-                        print(f"[ModelRouter Warning] Failover model {f_model} failed: {fe}")
+                        print(
+                            f"[ModelRouter Warning] Failover model {f_model} failed: "
+                            f"{type(fe).__name__}"
+                        )
             # Re-raise the error if failover didn't handle it or failed too
             raise e
+
+
+def _instructions_text(instructions: Any) -> str:
+    if isinstance(instructions, str):
+        return instructions
+    if isinstance(instructions, (list, tuple)):
+        return "\n".join(item for item in instructions if isinstance(item, str))
+    return ""
 
 # Инициализируем агента с моделью gemini-3.1-flash-lite и зависимостями OrangeDeps
 agent = OrangeAgent(
@@ -151,8 +146,6 @@ agent = OrangeAgent(
 # Регистрация инструментов из Rust-ядра
 agent.tool(tools.scan_vault_fast)
 agent.tool(tools.read_file_fast)
-agent.tool_plain(tools.fetch_website_fast)
-
 # Регистрация Playwright и новых инструментов
 agent.tool(tools.deep_analyze_website)
 agent.tool(tools.rewrite_file)
@@ -161,8 +154,6 @@ agent.tool(tools.view_file_range)
 agent.tool(tools.add_task)
 agent.tool(tools.search_memory)
 agent.tool(tools.fetch_url)
-agent.tool(tools.deep_research)
-agent.tool(tools.execute_python)
 agent.tool(tools.list_existing_notes)
 agent.tool(tools.scout_website)
 agent.tool(tools.expand_note_links)
@@ -184,6 +175,8 @@ async def inject_mcp_tools(ctx: RunContext[OrangeDeps]) -> str:
         mcp_tools = await ctx.deps.mcp_client.get_tools()
         tools_info = []
         for t in mcp_tools:
+            if t.name not in SAFE_AGENT_MCP_TOOLS:
+                continue
             tools_info.append(f"- {t.name}: {t.description} (Schema: {t.inputSchema})")
         
         if tools_info:
@@ -196,7 +189,7 @@ async def inject_mcp_tools(ctx: RunContext[OrangeDeps]) -> str:
             )
         return "\n\nNo available MCP tools found."
     except Exception as e:
-        return f"\n\nFailed to retrieve MCP tools list: {e}"
+        return f"\n\nFailed to retrieve MCP tools list: {type(e).__name__}"
 
 @agent.tool
 async def call_obsidian_tool(ctx: RunContext[OrangeDeps], tool_name: str, arguments: Dict[str, Any]) -> str:
@@ -204,11 +197,25 @@ async def call_obsidian_tool(ctx: RunContext[OrangeDeps], tool_name: str, argume
     Проксирует вызов к MCP-серверу Obsidian.
     
     Args:
-        tool_name: Имя инструмента (например, 'read_file', 'write_file').
+        tool_name: Read-only MCP tool name (`list_notes` or `read_note`).
         arguments: Словарь с аргументами, которые ожидает инструмент.
     """
     if not ctx.deps.mcp_client or not ctx.deps.mcp_client._session:
-        return "Error: MCP client is not connected."
+        return "[NOT_CONFIGURED] MCP client is not connected."
+    if tool_name not in SAFE_AGENT_MCP_TOOLS:
+        from core import db
+
+        db.add_audit_event(
+            "mcp_tool",
+            "denied",
+            f"Agent MCP tool blocked: {str(tool_name)[:80]}",
+        )
+        return (
+            "[APPROVAL_DENIED] Agent-initiated MCP writes are disabled. "
+            "Use an approval-gated vault write tool instead."
+        )
+    if not isinstance(arguments, dict):
+        return "[VALIDATION_ERROR] MCP tool arguments must be an object."
 
     try:
         result = await ctx.deps.mcp_client.call_tool(tool_name, arguments)
@@ -218,11 +225,11 @@ async def call_obsidian_tool(ctx: RunContext[OrangeDeps], tool_name: str, argume
             text_outputs = []
             for item in result.content:
                 if item.type == "text":
-                    text_outputs.append(item.text)
+                    text_outputs.append(str(item.text)[:1_000_000])
                 else:
-                    text_outputs.append(str(item))
-            return "\n".join(text_outputs)
+                    text_outputs.append(str(item)[:10_000])
+            return "\n".join(text_outputs)[:1_000_000]
             
-        return str(result)
+        return str(result)[:1_000_000]
     except Exception as e:
-        return f"Error executing tool '{tool_name}': {str(e)}"
+        return f"[PROVIDER_ERROR] MCP tool '{tool_name}' failed: {type(e).__name__}"

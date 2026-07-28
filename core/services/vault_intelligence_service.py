@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import math
-import os
 import re
+import subprocess
 from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -10,6 +10,7 @@ from typing import Dict, List, Set
 
 from core import db
 from core.graph_api import get_notes_graph
+from core.path_safety import VaultPathResolver
 
 
 TASK_PATTERN = re.compile(r"^\s*[-*]\s+\[(?P<done>[ xX])\]\s+(?P<text>.+)$", re.MULTILINE)
@@ -37,24 +38,18 @@ class VaultIntelligenceService:
     """Local analytical layer over the Obsidian vault."""
 
     def __init__(self, vault_path: str):
-        self.vault_path = Path(vault_path).resolve()
+        self._resolver = VaultPathResolver(vault_path)
+        self.vault_path = self._resolver.root
 
     def build_time_machine(self, days: int = 90) -> Dict:
+        days = max(1, min(int(days), 3650))
         records = self._records()
         now = datetime.now()
         horizon = now - timedelta(days=days)
         recent = [record for record in records if record["modified_at"] >= horizon]
-        timeline = []
-        for index in range(0, days, 7):
-            start = now - timedelta(days=index + 7)
-            end = now - timedelta(days=index)
-            notes = [record for record in records if start <= record["modified_at"] < end]
-            if notes:
-                timeline.append({
-                    "period": f"{start.date().isoformat()}..{end.date().isoformat()}",
-                    "count": len(notes),
-                    "notes": [self._brief_note(record) for record in notes[:8]],
-                })
+        git_timeline = self._git_timeline(days)
+        history_source = "git" if git_timeline else "file_activity"
+        timeline = git_timeline or self._mtime_timeline(records, now, days)
 
         themes = self._top_terms(recent or records, limit=12)
         bursts = sorted(recent, key=lambda record: (record["task_count"], record["link_count"], record["size"]), reverse=True)[:12]
@@ -64,6 +59,7 @@ class VaultIntelligenceService:
             "status": "success",
             "generated_at": now.isoformat(timespec="seconds"),
             "scope_days": days,
+            "history_source": history_source,
             "total_notes": len(records),
             "recent_notes": len(recent),
             "themes": themes,
@@ -73,6 +69,7 @@ class VaultIntelligenceService:
         }
 
     def find_contradictions(self, limit: int = 40) -> Dict:
+        limit = max(1, min(int(limit), 200))
         records = self._records()
         statements = self._decision_statements(records)
         findings = []
@@ -91,6 +88,7 @@ class VaultIntelligenceService:
                     "left": left,
                     "right": right,
                     "suggestion": "Pick one current rule, mark the older line as superseded, and link both notes.",
+                    "confidence": "possible",
                 })
                 if len(findings) >= limit:
                     break
@@ -101,8 +99,14 @@ class VaultIntelligenceService:
         for record in records:
             for task in record["tasks"]:
                 normalized = self._normalize_task(task["text"])
+                if not normalized:
+                    continue
                 bucket = task_states.setdefault(normalized, {"open": [], "done": []})
-                bucket["done" if task["done"] else "open"].append({"path": record["path"], "line": task["text"]})
+                bucket["done" if task["done"] else "open"].append({
+                    "path": record["path"],
+                    "line": task["line"],
+                    "text": task["text"],
+                })
 
         for normalized, states in task_states.items():
             if states["open"] and states["done"]:
@@ -113,6 +117,7 @@ class VaultIntelligenceService:
                     "left": states["open"][0],
                     "right": states["done"][0],
                     "suggestion": "Decide whether this task is actually done, then remove or archive the stale duplicate.",
+                    "confidence": "possible",
                 })
 
         findings.sort(key=lambda item: item["severity"], reverse=True)
@@ -120,57 +125,16 @@ class VaultIntelligenceService:
         return {"status": "success", "count": len(findings), "findings": findings[:limit]}
 
     def run_agent_debate(self, topic: str = "") -> Dict:
-        records = self._records()
-        topic = topic.strip() or self._default_topic(records)
-        context = self._relevant_records(records, topic, limit=6)
-        open_tasks = [task for record in context for task in record["tasks"] if not task["done"]][:8]
-        linked_notes = sorted({link for record in context for link in record["links"]})[:12]
-
-        engineer = {
-            "role": "Engineer",
-            "stance": "Build the smallest reversible change and protect the vault with diffs.",
-            "points": [
-                f"Start from {len(context)} relevant notes and keep all writes under explicit approval.",
-                f"Turn {len(open_tasks)} open tasks into a short implementation queue.",
-                "Add tests around path safety, generated markdown shape, and public BridgeAPI names.",
-            ],
-        }
-        strategist = {
-            "role": "Strategist",
-            "stance": "Ship the loop that changes user behavior, not only another report.",
-            "points": [
-                "Make the first screen answer: what matters now, what changed, what is stuck.",
-                f"Use linked notes as leverage: {', '.join(linked_notes[:5]) or 'no strong links yet'}.",
-                "Prefer recurring review rituals over one-off analysis screens.",
-            ],
-        }
-        skeptic = {
-            "role": "Skeptic",
-            "stance": "Assume generated insight can be wrong until it shows evidence.",
-            "points": [
-                "Every claim must point to a note path, line, task, or diff.",
-                "Do not rewrite source notes from a debate; produce proposed actions only.",
-                "Watch for stale metadata: file modification time is not true semantic history.",
-            ],
-        }
-        synthesis = {
-            "decision": "Use the debate as a proposal generator, then move accepted actions into the diff approval queue.",
-            "next_actions": [
-                "Create 3 candidate actions from the debate.",
-                "Attach source note paths to every action.",
-                "Ask for approval before changing any markdown.",
-            ],
-        }
-        db.add_audit_event("agent_debate", "viewed", f"Ran local agent debate for: {topic}")
         return {
-            "status": "success",
-            "topic": topic,
-            "context_notes": [self._brief_note(record) for record in context],
-            "rounds": [engineer, strategist, skeptic],
-            "synthesis": synthesis,
+            "status": "error",
+            "error_code": "NOT_CONFIGURED",
+            "message": (
+                "Agent Debate requires a configured independent multi-model runner."
+            ),
         }
 
     def find_dormant_projects(self, stale_days: int = 30) -> Dict:
+        stale_days = max(1, min(int(stale_days), 3650))
         records = [record for record in self._records() if self._is_project(record)]
         cutoff = datetime.now() - timedelta(days=stale_days)
         dormant = []
@@ -193,40 +157,52 @@ class VaultIntelligenceService:
 
     def build_operating_manual(self) -> Dict:
         records = self._records()
-        graph = get_notes_graph(str(self.vault_path))
+        graph = get_notes_graph(str(self.vault_path), exclude_generated=True)
         orphan_count = sum(1 for node in graph["nodes"] if node.get("orphan"))
         open_tasks = [task for record in records for task in record["tasks"] if not task["done"]]
         themes = self._top_terms(records, limit=8)
         audit_events = db.list_audit_events(30)
+        statements = self._decision_statements(records)
+        explicit_principles = []
+        seen_principles = set()
+        for statement in statements:
+            line = statement["line"]
+            normalized = line.lower()
+            if normalized in seen_principles:
+                continue
+            seen_principles.add(normalized)
+            explicit_principles.append(f"{line} ({statement['path']})")
+            if len(explicit_principles) >= 8:
+                break
+
+        event_counts = Counter(event["event_type"] for event in audit_events)
+        review_count = event_counts.get("weekly_review", 0)
+        used_features = [
+            f"{event_type}: {count} recent event(s)"
+            for event_type, count in event_counts.most_common(6)
+        ]
+        from core.runtime_settings import load_runtime_settings
+
+        runtime_settings = load_runtime_settings()
 
         manual = {
             "title": "Personal Operating Manual",
-            "principles": [
-                "Obsidian remains the source of truth; ORANGE proposes and explains changes.",
-                "Every risky action needs a diff, evidence, and an approval step.",
-                "Prefer small weekly maintenance loops over large cleanup binges.",
-            ],
+            "principles": explicit_principles or ["No explicit operating principles were found in the vault."],
             "current_context": [
                 f"Vault notes: {len(records)}",
                 f"Open tasks detected: {len(open_tasks)}",
                 f"Orphan notes detected: {orphan_count}",
                 f"Dominant themes: {', '.join(term['term'] for term in themes[:5]) or 'not enough signal'}",
             ],
-            "how_to_work_with_orange": [
-                "Ask for proposals first when changing note structure.",
-                "Use Agent Debate for ambiguous product or architecture choices.",
-                "Use Weekly Review to close loops before adding new projects.",
-                "Use Dormant Project Radar when attention feels fragmented.",
-            ],
+            "how_to_work_with_orange": used_features or ["No recent ORANGE usage patterns recorded."],
             "review_rhythm": [
-                "Morning: open dashboard and pick three focus items.",
-                "Weekly: generate review, clean overdue tasks, revive or archive dormant projects.",
-                "Monthly: run contradiction finder and update this manual.",
+                f"Weekly review events recorded in the latest audit window: {review_count}",
+                f"Recent audit events considered: {len(audit_events)}",
             ],
             "safety_contract": [
-                "No silent vault rewrites.",
-                "No auto-push by default.",
-                "All generated pages go under `_Orange/` unless explicitly changed.",
+                f"Auto backup: {runtime_settings.get('auto_backup_enabled', 'OFF')}",
+                f"Auto push: {runtime_settings.get('auto_push_enabled', 'OFF')}",
+                "Vault writes require the configured approval callback.",
             ],
             "recent_system_events": [
                 f"{event['timestamp']} / {event['event_type']} / {event['status']}: {event['summary']}"
@@ -236,28 +212,129 @@ class VaultIntelligenceService:
         db.add_audit_event("operating_manual", "viewed", "Built personal operating manual")
         return {"status": "success", "manual": manual}
 
+    def _git_timeline(self, days: int) -> List[Dict]:
+        try:
+            repo_result = subprocess.run(
+                ["git", "-C", str(self.vault_path), "rev-parse", "--show-toplevel"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if repo_result.returncode != 0:
+            return []
+        repo_root = Path(repo_result.stdout.strip()).resolve()
+        try:
+            self.vault_path.relative_to(repo_root)
+        except ValueError:
+            return []
+
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "core.quotepath=false",
+                    "-C",
+                    str(self.vault_path),
+                    "log",
+                    f"--since={max(1, days)} days ago",
+                    "--date=iso-strict",
+                    "--format=%H%x1f%ad%x1f%s",
+                    "--name-only",
+                    "--",
+                    ".",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+
+        timeline = []
+        current = None
+        for line in result.stdout.splitlines():
+            if "\x1f" in line:
+                commit_hash, timestamp, subject = line.split("\x1f", 2)
+                current = {
+                    "period": timestamp,
+                    "commit": commit_hash[:12],
+                    "subject": subject,
+                    "notes": [],
+                }
+                timeline.append(current)
+                continue
+            path = line.strip()
+            if not current or not path.lower().endswith(".md"):
+                continue
+            candidate = (repo_root / path).resolve(strict=False)
+            try:
+                vault_relative = candidate.relative_to(self.vault_path).as_posix()
+            except ValueError:
+                candidate = (self.vault_path / path).resolve(strict=False)
+                try:
+                    vault_relative = candidate.relative_to(self.vault_path).as_posix()
+                except ValueError:
+                    continue
+            if vault_relative.lower().startswith("_orange/"):
+                continue
+            current["notes"].append({
+                "path": vault_relative,
+                "title": Path(vault_relative).stem,
+                "modified_at": current["period"],
+                "open_task_count": 0,
+                "link_count": 0,
+                "size": 0,
+            })
+
+        for bucket in timeline:
+            bucket["notes"] = bucket["notes"][:12]
+            bucket["count"] = len(bucket["notes"])
+        return [bucket for bucket in timeline if bucket["count"]][:40]
+
+    def _mtime_timeline(self, records: List[Dict], now: datetime, days: int) -> List[Dict]:
+        timeline = []
+        for index in range(0, days, 7):
+            start = now - timedelta(days=index + 7)
+            end = now - timedelta(days=index)
+            notes = [record for record in records if start <= record["modified_at"] < end]
+            if notes:
+                timeline.append({
+                    "period": f"{start.date().isoformat()}..{end.date().isoformat()}",
+                    "count": len(notes),
+                    "notes": [self._brief_note(record) for record in notes[:8]],
+                })
+        return timeline
+
     def _records(self) -> List[Dict]:
         records = []
-        if not self.vault_path.exists():
-            return records
-        for root, dirs, files in os.walk(self.vault_path):
-            dirs[:] = [directory for directory in dirs if not directory.startswith(".")]
-            for filename in files:
-                if not filename.endswith(".md"):
-                    continue
-                path = Path(root) / filename
-                rel = str(path.relative_to(self.vault_path))
-                if rel.startswith("_Orange/"):
-                    continue
+        for path in self._resolver.iter_notes(exclude_generated=True):
+            rel = path.relative_to(self.vault_path).as_posix()
+            try:
                 records.append(self._record(path, rel))
+            except OSError:
+                continue
         return sorted(records, key=lambda record: record["modified_at"], reverse=True)
 
     def _record(self, path: Path, rel: str) -> Dict:
-        content = path.read_text(encoding="utf-8", errors="ignore")
-        tasks = [
-            {"done": match.group("done").lower() == "x", "text": match.group("text").strip()}
-            for match in TASK_PATTERN.finditer(content)
-        ]
+        content = self._resolver.read_note_text(path)
+        tasks = []
+        for match in TASK_PATTERN.finditer(content):
+            tasks.append({
+                "done": match.group("done").lower() == "x",
+                "text": match.group("text").strip(),
+                "line": content.count("\n", 0, match.start()) + 1,
+            })
         links = sorted(set(WIKILINK_PATTERN.findall(content)))
         stat = path.stat()
         title = self._extract_title(content) or path.stem
@@ -279,21 +356,27 @@ class VaultIntelligenceService:
     def _decision_statements(self, records: List[Dict]) -> List[Dict]:
         statements = []
         for record in records:
-            for line in record["content"].splitlines():
+            for line_number, line in enumerate(record["content"].splitlines(), start=1):
                 stripped = line.strip("-*# \t")
                 lowered = stripped.lower()
                 if len(stripped) < 10:
                     continue
                 polarity = ""
-                if any(marker in lowered for marker in NEGATIVE_MARKERS):
+                if any(self._contains_marker(lowered, marker) for marker in NEGATIVE_MARKERS):
                     polarity = "negative"
-                elif any(marker in lowered for marker in POSITIVE_MARKERS):
+                elif any(self._contains_marker(lowered, marker) for marker in POSITIVE_MARKERS):
                     polarity = "positive"
                 if not polarity:
                     continue
                 terms = self._terms(stripped)
                 if terms:
-                    statements.append({"path": record["path"], "line": stripped[:260], "polarity": polarity, "terms": terms})
+                    statements.append({
+                        "path": record["path"],
+                        "line_number": line_number,
+                        "line": stripped[:260],
+                        "polarity": polarity,
+                        "terms": terms,
+                    })
         return statements[:500]
 
     def _top_terms(self, records: List[Dict], limit: int) -> List[Dict]:
@@ -363,3 +446,6 @@ class VaultIntelligenceService:
     def _normalize_task(self, text: str) -> str:
         words = [word for word in WORD_PATTERN.findall(text.lower()) if word not in STOP_WORDS]
         return " ".join(words[:12])
+
+    def _contains_marker(self, text: str, marker: str) -> bool:
+        return bool(re.search(rf"(?<![\w]){re.escape(marker)}(?![\w])", text))

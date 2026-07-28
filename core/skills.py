@@ -1,10 +1,9 @@
 import os
 import re
-import glob
-import json
 import asyncio
 from core import db
 from core.markdown_ops import read_note_cli
+from core.path_safety import VaultPathResolver
 from core.services.write_preview_service import WritePreviewService, confirm_and_apply_plan
 
 async def crystallize_skill(chat_id: str, deps, api_key: str):
@@ -38,6 +37,11 @@ async def crystallize_skill(chat_id: str, deps, api_key: str):
         for msg in history:
             lines.append(f"{msg['role'].upper()}: {msg['content']}")
         full_chat = "\n---\n".join(lines)
+        if len(full_chat) > 40_000:
+            full_chat = (
+                "[Earlier chat context omitted because the skill context exceeded 40 KB.]\n\n"
+                + full_chat[-40_000:]
+            )
         
         # Вызываем Gemini для рефлексии и кристаллизации
         from core.agent import agent as root_agent, LITE_MODEL
@@ -54,7 +58,15 @@ async def crystallize_skill(chat_id: str, deps, api_key: str):
             f"ДИАЛОГ:\n{full_chat}"
         )
         
-        res = await root_agent.run(prompt, model=LITE_MODEL, deps=deps)
+        res = await asyncio.wait_for(
+            root_agent.run(
+                prompt,
+                model=LITE_MODEL,
+                deps=deps,
+                model_settings={"timeout": 60.0},
+            ),
+            timeout=70.0,
+        )
         skill_md = getattr(res, 'data', getattr(res, 'output', str(res))).strip()
         
         if skill_md.upper() == "NONE" or "NONE" in skill_md[:10]:
@@ -86,7 +98,7 @@ async def crystallize_skill(chat_id: str, deps, api_key: str):
         print(f"[Skills] Успешно кристаллизован новый навык: {filepath}")
         
     except Exception as e:
-        print(f"[Skills Error] Ошибка кристаллизации навыка: {e}")
+        print(f"[Skills Error] Skill crystallization failed: {type(e).__name__}")
 
 async def load_relevant_skills(deps, user_prompt: str, api_key: str) -> str:
     """
@@ -107,21 +119,29 @@ async def load_relevant_skills(deps, user_prompt: str, api_key: str) -> str:
         else:
             vault_path = deps.obsidian_vault_path
 
-        skills_dir = os.path.join(vault_path, "_System", "Skills")
-        if not os.path.exists(skills_dir):
+        resolver = VaultPathResolver(vault_path)
+        try:
+            skills_dir = resolver.resolve("_System/Skills")
+        except ValueError:
+            return ""
+        if not skills_dir.is_dir():
             return ""
             
-        skill_files = glob.glob(os.path.join(skills_dir, "*.md"))
+        skill_files = [
+            path
+            for path in resolver.iter_notes()
+            if path.parent == skills_dir
+        ][:100]
         if not skill_files:
             return ""
             
         # Составляем список доступных навыков
         skills_info = []
         for filepath in skill_files:
-            filename = os.path.basename(filepath)
+            filename = filepath.name
             # Читаем первую строку (заголовок)
             try:
-                with open(filepath, "r", encoding="utf-8") as f:
+                with filepath.open("r", encoding="utf-8") as f:
                     first_line = f.readline().strip()
                 title = first_line.replace("# Навык:", "").replace("#", "").strip()
                 skills_info.append({"file": filename, "title": title})
@@ -144,13 +164,21 @@ async def load_relevant_skills(deps, user_prompt: str, api_key: str) -> str:
             "Не пиши никаких объяснений и вводных слов."
         )
         
-        res = await root_agent.run(prompt, model=LITE_MODEL, deps=deps)
+        res = await asyncio.wait_for(
+            root_agent.run(
+                prompt,
+                model=LITE_MODEL,
+                deps=deps,
+                model_settings={"timeout": 30.0},
+            ),
+            timeout=40.0,
+        )
         answer = getattr(res, 'data', getattr(res, 'output', str(res))).strip().lower()
         
         if "none" in answer:
             return ""
             
-        selected_files = [f.strip() for f in answer.split(",") if f.strip()]
+        selected_files = [f.strip() for f in answer.split(",") if f.strip()][:3]
         
         injected_skills = []
         for sel_file in selected_files:
@@ -162,10 +190,15 @@ async def load_relevant_skills(deps, user_prompt: str, api_key: str) -> str:
                     break
                     
             if matching_file:
-                full_path = os.path.join(skills_dir, matching_file)
+                full_path = resolver.resolve_note(skills_dir / matching_file, must_exist=True)
                 try:
-                    content = await read_note_cli(full_path, vault_path=vault_path)
-                    injected_skills.append(f"=== RELEVANT SKILL ({matching_file}) ===\n{content}")
+                    content = await read_note_cli(
+                        resolver.relative(full_path),
+                        vault_path=vault_path,
+                    )
+                    injected_skills.append(
+                        f"=== RELEVANT SKILL ({matching_file}) ===\n{content[:12_000]}"
+                    )
                     print(f"[Skills] Динамически загружен навык: {matching_file}")
                 except Exception as ex:
                     print(f"[Skills Error] Не удалось прочитать файл навыка {matching_file}: {ex}")
@@ -175,5 +208,5 @@ async def load_relevant_skills(deps, user_prompt: str, api_key: str) -> str:
         return ""
         
     except Exception as e:
-        print(f"[Skills Error] Ошибка загрузки релевантных навыков: {e}")
+        print(f"[Skills Error] Relevant skill loading failed: {type(e).__name__}")
         return ""

@@ -72,6 +72,9 @@ def append_task_to_markdown(markdown_text: str, task_text: str) -> str:
 import asyncio
 import subprocess
 import json
+import re
+import shutil
+from pathlib import PurePosixPath
 from typing import List
 
 _obsidian_cli_lock = None
@@ -88,15 +91,13 @@ def decode_bytes(data: bytes) -> str:
     return data.decode('utf-8', errors='replace')
 
 async def run_obsidian_cli(args: List[str]) -> str:
-    """Runs obsidian CLI command with Anti-Wedge Delay protection."""
+    """Runs Obsidian CLI without invoking a shell."""
     global _obsidian_cli_lock
     if _obsidian_cli_lock is None:
         _obsidian_cli_lock = asyncio.Lock()
     async with _obsidian_cli_lock:
+        cmd = ["obsidian", *[str(arg).replace("\\", "/") for arg in args]]
         try:
-            cmd = ["obsidian"] + args
-            cmd = [arg.replace("\\", "/") for arg in cmd]
-            
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -104,6 +105,13 @@ async def run_obsidian_cli(args: List[str]) -> str:
             )
             try:
                 stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15.0)
+            except asyncio.CancelledError:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
+                raise
             except asyncio.TimeoutError:
                 try:
                     proc.kill()
@@ -118,33 +126,16 @@ async def run_obsidian_cli(args: List[str]) -> str:
                 err_msg = decode_bytes(stderr).strip()
                 raise RuntimeError(f"Obsidian CLI failed: {err_msg}")
                 
-            return decode_bytes(stdout)
-        except Exception as e:
-            if "timed out" in str(e):
-                raise e
-            try:
-                cmd_args = [arg.replace("\\", "/") for arg in (["obsidian"] + args)]
-                cmd_str = " ".join([f'"{arg}"' for arg in cmd_args])
-                proc = await asyncio.create_subprocess_shell(
-                    cmd_str,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                try:
-                    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15.0)
-                except asyncio.TimeoutError:
-                    try:
-                        proc.kill()
-                    except Exception:
-                        pass
-                    raise RuntimeError("Obsidian CLI execution timed out after 15 seconds")
-                await asyncio.sleep(0.06)
-                if proc.returncode != 0:
-                    err_msg = decode_bytes(stderr).strip()
-                    raise RuntimeError(f"Obsidian CLI failed: {err_msg}")
-                return decode_bytes(stdout)
-            except Exception as ex:
-                raise RuntimeError(f"Failed to run obsidian CLI: {ex}")
+            decoded = decode_bytes(stdout)
+            if len(decoded) > 1_000_000:
+                return decoded[:1_000_000] + "\n...[CLI output truncated]"
+            return decoded
+        except FileNotFoundError as exc:
+            raise RuntimeError("Obsidian CLI is not installed or is not available in PATH.") from exc
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            raise RuntimeError(f"Failed to run Obsidian CLI: {exc}") from exc
 
 # ---------------------------------------------------------------------------
 # Path Sanitization Constants
@@ -188,9 +179,18 @@ def _is_safe_note_path(path: str) -> bool:
     path_clean = path.strip()
     if not path_clean:
         return False
+    normalized = path_clean.replace("\\", "/")
+    path_parts = PurePosixPath(normalized).parts
+    if (
+        "\0" in normalized
+        or normalized.startswith(("/", "~"))
+        or re.match(r"^[A-Za-z]:", normalized)
+        or ".." in path_parts
+    ):
+        return False
 
     # Rule 1 – extension whitelist
-    path_lower = path_clean.lower()
+    path_lower = normalized.lower()
     if not path_lower.endswith(ALLOWED_EXTENSIONS):
         return False
 
@@ -217,7 +217,7 @@ def _sanitize_path_for_cli(raw_path: str) -> str:
     return p
 
 
-async def search_notes_cli(query: str) -> List[str]:
+async def search_notes_cli(query: str, vault_path: str | None = None) -> List[str]:
     """
     Search notes using Obsidian CLI: obsidian search query="{query}" format=json
 
@@ -230,7 +230,10 @@ async def search_notes_cli(query: str) -> List[str]:
     a structured "[ERROR] Заметка не найдена в индексах хранилища" message
     so that callers receive a clean signal instead of garbage.
     """
+    cli_failed = False
+
     async def _execute_search(q: str) -> List[str]:
+        nonlocal cli_failed
         try:
             output = await run_obsidian_cli(["search", f"query={q}", "format=json"])
             cleaned = output.strip()
@@ -238,16 +241,27 @@ async def search_notes_cli(query: str) -> List[str]:
                 return []
 
             # --- Parse raw output ------------------------------------------------
-            raw_paths: list = []
+            raw_paths: list[str] = []
 
             # Try parsing as JSON list first
             try:
                 parsed = json.loads(cleaned)
                 if isinstance(parsed, list):
-                    raw_paths = [str(p) for p in parsed]
+                    for item in parsed:
+                        if isinstance(item, str):
+                            raw_paths.append(item)
+                        elif isinstance(item, dict):
+                            value = item.get("path") or item.get("file") or item.get("name")
+                            if value:
+                                raw_paths.append(str(value))
                 elif isinstance(parsed, dict):
-                    # Some CLI versions return {"results": [...]}
-                    raw_paths = [str(p) for p in parsed.get("results", [])]
+                    for item in parsed.get("results", []):
+                        if isinstance(item, str):
+                            raw_paths.append(item)
+                        elif isinstance(item, dict):
+                            value = item.get("path") or item.get("file") or item.get("name")
+                            if value:
+                                raw_paths.append(str(value))
             except json.JSONDecodeError:
                 pass
 
@@ -261,22 +275,40 @@ async def search_notes_cli(query: str) -> List[str]:
                 for p in raw_paths
                 if _is_safe_note_path(p)
             ]
+            if vault_path:
+                from core.path_safety import VaultPathResolver
+
+                resolver = VaultPathResolver(vault_path)
+                validated = []
+                for path in safe_paths:
+                    try:
+                        validated.append(resolver.relative(resolver.resolve_note(path, must_exist=True)))
+                    except ValueError:
+                        continue
+                return validated
             return safe_paths
         except Exception as e:
-            print(f"[Obsidian CLI Search Error] {e}")
+            cli_failed = True
+            print(f"[Obsidian CLI Search Error] {type(e).__name__}")
             return []
 
+    if shutil.which("obsidian") is None:
+        cli_failed = True
+
     # 1. First attempt: standard text search
-    results = await _execute_search(query)
+    results = [] if cli_failed else await _execute_search(query)
 
     # 2. Fallback attempt: filename search if no results found
-    if not results:
+    if not results and not cli_failed:
         results = await _execute_search(f"file:{query}")
+
+    if not results and vault_path:
+        from core.hybrid_search import local_search_vault
+
+        return local_search_vault(query, vault_path)
 
     if not results:
         print("[ERROR] Заметка не найдена в индексах хранилища")
-        return []
-
     return results
 
 
@@ -300,16 +332,22 @@ async def read_note_cli(path: str, vault_path: str | None = None) -> str:
             "Разрешены только файлы .md / .canvas без запрещённых подстрок."
         )
 
-    # Physical existence check (when vault root is known)
     if vault_path:
-        import os
-        abs_path = os.path.join(vault_path, sanitized)
-        abs_path = os.path.normpath(abs_path)
-        if not os.path.isfile(abs_path):
-            return f"[ERROR] Файл не найден на диске: {sanitized}"
+        from core.path_safety import VaultPathResolver
+
+        try:
+            resolver = VaultPathResolver(vault_path)
+            resolved = resolver.resolve_note(sanitized, must_exist=True)
+            return await asyncio.to_thread(
+                resolver.read_note_text,
+                resolved,
+                max_chars=100_000,
+            )
+        except ValueError as exc:
+            return f"[ERROR] {exc}"
 
     try:
         output = await run_obsidian_cli(["read", f"path={sanitized}"])
         return output
     except Exception as e:
-        return f"Error reading note via Obsidian CLI: {str(e)}"
+        return f"[PROVIDER_ERROR] Obsidian CLI read failed: {type(e).__name__}"

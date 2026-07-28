@@ -6,76 +6,77 @@ PROFILES = {
         "RULES:\n"
         "1. Respond concisely, without unnecessary politeness or fluff.\n"
         "2. Focus strictly on facts.\n"
-        "3. Always respond in English unless the user explicitly requests another language."
+        "3. Respond in the language used by the user unless they explicitly request another language."
     ),
     "deep_research": (
         "You are Orange in Deep Research mode (OSINT Machine).\n"
         "Your main goal is to conduct deep information gathering and synthesis from the external web.\n"
         "RULES:\n"
-        "1. Actively use the `deep_research` tool to search and analyze information based on user query.\n"
-        "2. If you need to load a specific page, use `fetch_url`.\n"
+        "1. Use the real web sources supplied in the request context before making claims.\n"
+        "2. If a source is unavailable, say so instead of inventing its contents.\n"
         "3. Structure reports: highlight sections, list of sources with exact links, key dates, and numbers.\n"
         "4. Always verify facts and provide a balanced analytical synthesis.\n"
-        "5. Always respond in English unless the user explicitly requests another language."
+        "5. Respond in the language used by the user unless they explicitly request another language."
     ),
     "coder": (
-        "You are Orange in Coder mode (Local Python Sandbox).\n"
-        "Your goal is to write clean code and run it in a local sandbox environment.\n"
+        "You are Orange in Coder mode (Restricted Python Executor).\n"
+        "Your goal is to write clean, reviewable code.\n"
         "RULES:\n"
-        "1. For complex calculations, algorithm verification, or data analysis, write Python scripts and ALWAYS run them using the `execute_python` tool.\n"
-        "2. Run the code yourself first, inspect the output (stdout/stderr), fix errors, and only then present the final solution to the user.\n"
-        "3. Return working code with comments and an explanation of its execution results.\n"
-        "4. Always respond in English unless the user explicitly requests another language."
+        "1. Never claim that code was executed unless actual execution output is present in the prompt.\n"
+        "2. Python blocks are executed only through the user's Execute button and approval dialog.\n"
+        "3. Return working code with concise comments and state what remains unverified.\n"
+        "4. Respond in the language used by the user unless they explicitly request another language."
     ),
     "project_manager": (
-        "YOU ARE AN AUTOMATED ROUTING ROBOT WITH NO VOICE.\n"
-        "Your ONLY goal is to invoke the `add_task` tool.\n"
-        "FORBIDDEN: writing text responses, lists, reasoning, apologies, or questions.\n"
-        "FORBIDDEN: complaining about missing files.\n"
-        "MANDATORY MAP (use strictly as listed):\n"
-        "- VPN -> 2026/VPN.md\n"
-        "- DS Digital (scripts, agency) -> 2026/DS Digital.md\n"
-        "- Chess -> 2026/Chess.md\n"
-        "- Term papers (statistics, studies) -> 2026/Term_papers.md\n\n"
-        "ALGORITHM:\n"
-        "1. Read the text.\n"
-        "2. Use `add_task` for identified tasks; the write must pass the user's approval gate.\n"
-        "If approval is denied, summarize what would have been changed."
+        "You are Orange in Project Manager mode.\n"
+        "Your goal is to route explicit tasks into the user's real Obsidian vault.\n"
+        "RULES:\n"
+        "1. Use `list_existing_notes` before choosing a destination; never rely on a hardcoded project map.\n"
+        "2. Choose an exact vault-relative note path only when its title or content clearly matches the task.\n"
+        "3. Use `add_task` for the write. Every write must pass the user's approval gate.\n"
+        "4. When no destination is a clear match, ask the user where to place the task instead of inventing a note.\n"
+        "5. If approval is denied, report what was proposed and do not claim the file changed.\n"
+        "6. Respond in the language used by the user unless they explicitly request another language."
     )
 }
 
 import os
+from pathlib import Path
+from core.path_safety import VaultPathResolver
 
 def buildSessionContext(vault_path: str, current_note_path: str = None) -> str:
     """
     Выполняет Walk-up сканирование каталогов от текущей заметки до корня хранилища.
     Собирает контент локальных файлов SYSTEM.md и инструкций папок внутри текущего vault.
     """
-    vault_path = os.path.abspath(vault_path)
+    resolver = VaultPathResolver(vault_path)
+    vault_path = str(resolver.root)
     
     # 1. Определение начального пути сканирования
     start_dir = vault_path
     if current_note_path:
-        if not os.path.isabs(current_note_path):
-            abs_note_path = os.path.abspath(os.path.join(vault_path, current_note_path))
-        else:
-            abs_note_path = os.path.abspath(current_note_path)
-            
-        if os.path.isfile(abs_note_path):
-            start_dir = os.path.dirname(abs_note_path)
-        elif os.path.isdir(abs_note_path):
-            start_dir = abs_note_path
+        try:
+            abs_note_path = resolver.resolve(current_note_path, must_exist=True)
+            if abs_note_path.is_file():
+                start_dir = str(abs_note_path.parent)
+            elif abs_note_path.is_dir():
+                start_dir = str(abs_note_path)
+        except ValueError:
+            start_dir = vault_path
             
     # 2. Поднимаемся вверх по иерархии папок до корня vault_path
     collected_systems = []
     curr_dir = os.path.abspath(start_dir)
     
     while True:
-        system_file = os.path.join(curr_dir, "SYSTEM.md")
-        if os.path.isfile(system_file):
+        try:
+            system_file = resolver.resolve_note(Path(curr_dir) / "SYSTEM.md")
+        except ValueError:
+            system_file = None
+        if system_file and system_file.is_file():
             try:
-                with open(system_file, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read().strip()
+                with system_file.open('r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read(12_000).strip()
                 if content:
                     collected_systems.append(f"### Спецификация каталога {os.path.basename(curr_dir) or '/'}:\n{content}")
             except Exception as e:
@@ -86,18 +87,21 @@ def buildSessionContext(vault_path: str, current_note_path: str = None) -> str:
             break
             
         parent = os.path.dirname(curr_dir)
-        if parent == curr_dir:
+        if parent == curr_dir or not resolver.is_inside(parent):
             break
         curr_dir = parent
 
     collected_systems.reverse()
     
     # 3. Принудительно дописываем APPEND_SYSTEM.md
-    append_file = os.path.join(vault_path, "APPEND_SYSTEM.md")
-    if os.path.isfile(append_file):
+    try:
+        append_file = resolver.resolve_note("APPEND_SYSTEM.md")
+    except ValueError:
+        append_file = None
+    if append_file and append_file.is_file():
         try:
-            with open(append_file, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read().strip()
+            with append_file.open('r', encoding='utf-8', errors='ignore') as f:
+                content = f.read(12_000).strip()
             if content:
                 collected_systems.append(f"### APPEND_SYSTEM (Глобальные правила защиты):\n{content}")
         except Exception as e:
@@ -115,33 +119,44 @@ def buildIdentityContext(vault_path: str) -> str:
     - MEMORY.md (активные проекты/память, до 2200 символов)
     Если папка или файлы отсутствуют, ничего не создает и возвращает пустой контекст.
     """
-    vault_path = os.path.abspath(vault_path)
-    system_dir = os.path.join(vault_path, "_System")
+    resolver = VaultPathResolver(vault_path)
+    vault_path = str(resolver.root)
+    try:
+        system_dir = resolver.resolve("_System")
+    except ValueError:
+        return ""
     
-    if not os.path.exists(system_dir):
+    if not system_dir.is_dir():
         return ""
             
-    identity_file = os.path.join(system_dir, "Identity.md")
-    user_file = os.path.join(system_dir, "USER.md")
-    memory_file = os.path.join(system_dir, "MEMORY.md")
+    def safe_system_note(filename: str):
+        try:
+            path = resolver.resolve_note(system_dir / filename)
+        except ValueError:
+            return None
+        return path if path.is_file() else None
+
+    identity_file = safe_system_note("Identity.md")
+    user_file = safe_system_note("USER.md")
+    memory_file = safe_system_note("MEMORY.md")
     
     parts = []
     
     # 1. Identity
-    if os.path.isfile(identity_file):
+    if identity_file:
         try:
-            with open(identity_file, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read().strip()
+            with identity_file.open('r', encoding='utf-8', errors='ignore') as f:
+                content = f.read(4_000).strip()
             if content:
                 parts.append(f"=== IDENTITY (SOUL.md) ===\n{content}")
         except Exception:
             pass
             
     # 2. USER.md
-    if os.path.isfile(user_file):
+    if user_file:
         try:
-            with open(user_file, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read().strip()
+            with user_file.open('r', encoding='utf-8', errors='ignore') as f:
+                content = f.read(1_376).strip()
             if content:
                 # Limit to 1375 chars
                 user_content = content[:1375]
@@ -150,10 +165,10 @@ def buildIdentityContext(vault_path: str) -> str:
             pass
             
     # 3. MEMORY.md
-    if os.path.isfile(memory_file):
+    if memory_file:
         try:
-            with open(memory_file, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read().strip()
+            with memory_file.open('r', encoding='utf-8', errors='ignore') as f:
+                content = f.read(2_201).strip()
             if content:
                 # Limit to 2200 chars
                 memory_content = content[:2200]

@@ -11,20 +11,69 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { readFileSync, readdirSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { dirname, extname, isAbsolute, relative, resolve } from "path";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "fs";
+import { randomUUID } from "crypto";
+import { dirname, extname, relative, resolve } from "path";
+import { fileURLToPath } from "url";
+import { VaultPathError, VaultPathResolver } from "./vault_paths.ts";
 
-// Путь к Obsidian Vault (берём из .env или fallback к example fixture)
-const VAULT_PATH = process.env.OBSIDIAN_VAULT_PATH || "../examples/test_vault";
-const VAULT_ROOT = resolve(VAULT_PATH);
+const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const configuredVault = process.env.OBSIDIAN_VAULT_PATH || "examples/test_vault";
+const VAULT_PATH = resolve(PROJECT_ROOT, configuredVault);
+const MAX_NOTE_BYTES = 2 * 1024 * 1024;
+const MAX_LIST_BYTES = 1024 * 1024;
+let vaultResolver: VaultPathResolver | null = null;
+let vaultError: VaultPathError | null = null;
+try {
+  vaultResolver = new VaultPathResolver(VAULT_PATH);
+} catch (error) {
+  vaultError = error instanceof VaultPathError
+    ? error
+    : new VaultPathError("Не удалось открыть vault", "NOT_CONFIGURED");
+}
 
-function resolveVaultPath(notePath: string): string | null {
-  const fullPath = resolve(VAULT_ROOT, notePath);
-  const rel = relative(VAULT_ROOT, fullPath);
-  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) {
-    return fullPath;
+function resolveVaultPath(notePath: string): string {
+  if (!vaultResolver) {
+    throw vaultError || new VaultPathError("Vault не настроен", "NOT_CONFIGURED");
   }
-  return null;
+  return vaultResolver.resolve(notePath);
+}
+
+function errorResult(error: unknown) {
+  const safeError = error instanceof VaultPathError
+    ? error
+    : new VaultPathError("Операция с vault завершилась ошибкой");
+  return {
+    content: [{
+      type: "text" as const,
+      text: JSON.stringify({
+        status: "error",
+        error_code: safeError.code,
+        message: safeError.message,
+      }),
+    }],
+    isError: true,
+  };
+}
+
+function writeNoteAtomic(fullPath: string, content: string): void {
+  const tempPath = resolve(dirname(fullPath), `.${randomUUID()}.orange.tmp`);
+  try {
+    writeFileSync(tempPath, content, "utf-8");
+    renameSync(tempPath, fullPath);
+  } finally {
+    rmSync(tempPath, { force: true });
+  }
 }
 
 // Рекурсивный обход директории — возвращает все .md файлы
@@ -33,17 +82,48 @@ function getAllMarkdownFiles(dir: string, base: string = dir): string[] {
   try {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const fullPath = resolve(dir, entry.name);
-      if (entry.isDirectory() && !entry.name.startsWith(".")) {
+      const fileType = lstatSync(fullPath);
+      if (fileType.isSymbolicLink()) {
+        continue;
+      }
+      if (fileType.isDirectory() && !entry.name.startsWith(".")) {
         files.push(...getAllMarkdownFiles(fullPath, base));
-      } else if (entry.isFile() && extname(entry.name) === ".md") {
+      } else if (fileType.isFile() && extname(entry.name).toLowerCase() === ".md") {
         // Возвращаем относительный путь от корня vault
         files.push(relative(base, fullPath).replace(/\\/g, "/"));
       }
     }
-  } catch (e) {
-    // Игнорируем директории без доступа
+  } catch (_error) {
+    const relativeDirectory = relative(base, dir).replace(/\\/g, "/") || ".";
+    throw new VaultPathError(
+      `Не удалось полностью просканировать каталог vault: ${relativeDirectory}`,
+    );
   }
   return files;
+}
+
+function boundedNoteList(files: string[]): string {
+  if (!files.length) {
+    return "Заметки не найдены.";
+  }
+  const selected: string[] = [];
+  let bytes = 0;
+  const truncatedMarker = "...[список обрезан по лимиту 1 MB]";
+  const markerBytes = Buffer.byteLength(truncatedMarker, "utf-8") + 1;
+  for (const file of files) {
+    const lineBytes = Buffer.byteLength(file, "utf-8") + 1;
+    if (bytes + lineBytes > MAX_LIST_BYTES) {
+      while (selected.length && bytes + markerBytes > MAX_LIST_BYTES) {
+        const removed = selected.pop() || "";
+        bytes -= Buffer.byteLength(removed, "utf-8") + 1;
+      }
+      selected.push(truncatedMarker);
+      break;
+    }
+    selected.push(file);
+    bytes += lineBytes;
+  }
+  return selected.join("\n");
 }
 
 // Создаём MCP сервер
@@ -103,67 +183,80 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   if (name === "list_notes") {
-    const files = getAllMarkdownFiles(VAULT_ROOT);
-    return {
-      content: [
-        {
-          type: "text",
-          text: files.length > 0 ? files.join("\n") : "Заметки не найдены.",
-        },
-      ],
-    };
+    if (!vaultResolver) {
+      return errorResult(vaultError);
+    }
+    try {
+      const files = getAllMarkdownFiles(vaultResolver.realRoot)
+        .sort((a, b) => a.localeCompare(b));
+      return {
+        content: [
+          {
+            type: "text",
+            text: boundedNoteList(files),
+          },
+        ],
+      };
+    } catch (error) {
+      return errorResult(error);
+    }
   }
 
   if (name === "read_note") {
     const notePath = args?.path as string;
     if (!notePath) {
-      return { content: [{ type: "text", text: "Ошибка: путь не указан" }], isError: true };
-    }
-    const fullPath = resolveVaultPath(notePath);
-    if (!fullPath) {
-      return { content: [{ type: "text", text: "Ошибка: запрещённый путь" }], isError: true };
-    }
-    if (extname(fullPath) !== ".md") {
-      return { content: [{ type: "text", text: "Ошибка: разрешены только .md заметки" }], isError: true };
-    }
-    if (!existsSync(fullPath)) {
-      return { content: [{ type: "text", text: `Файл не найден: ${notePath}` }], isError: true };
+      return errorResult(new VaultPathError("Путь заметки не указан"));
     }
     try {
+      const fullPath = resolveVaultPath(notePath);
+      if (extname(fullPath).toLowerCase() !== ".md") {
+        throw new VaultPathError("Разрешены только .md заметки");
+      }
+      if (!existsSync(fullPath)) {
+        throw new VaultPathError(`Файл не найден: ${notePath}`);
+      }
+      if (statSync(fullPath).size > MAX_NOTE_BYTES) {
+        throw new VaultPathError("Заметка превышает лимит чтения 2 MB");
+      }
       const content = readFileSync(fullPath, "utf-8");
       return { content: [{ type: "text", text: content }] };
     } catch (e) {
-      return { content: [{ type: "text", text: `Ошибка чтения: ${e}` }], isError: true };
+      return errorResult(e);
     }
   }
 
   if (name === "write_note") {
     const notePath = args?.path as string;
     const content = args?.content as string;
-    if (!notePath || content === undefined) {
-      return { content: [{ type: "text", text: "Ошибка: путь или содержимое не указаны" }], isError: true };
-    }
-    const fullPath = resolveVaultPath(notePath);
-    if (!fullPath) {
-      return { content: [{ type: "text", text: "Ошибка: запрещённый путь" }], isError: true };
-    }
-    if (extname(fullPath) !== ".md") {
-      return { content: [{ type: "text", text: "Ошибка: разрешены только .md заметки" }], isError: true };
+    if (!notePath || typeof content !== "string") {
+      return errorResult(new VaultPathError("Путь или текст заметки не указаны"));
     }
     try {
-      // Создаём директории если не существуют
+      if (Buffer.byteLength(content, "utf-8") > MAX_NOTE_BYTES) {
+        throw new VaultPathError("Заметка превышает лимит записи 2 MB");
+      }
+      const fullPath = resolveVaultPath(notePath);
+      if (extname(fullPath).toLowerCase() !== ".md") {
+        throw new VaultPathError("Разрешены только .md заметки");
+      }
       mkdirSync(dirname(fullPath), { recursive: true });
-      writeFileSync(fullPath, content, "utf-8");
+      writeNoteAtomic(fullPath, content);
       return { content: [{ type: "text", text: `Записано: ${notePath}` }] };
     } catch (e) {
-      return { content: [{ type: "text", text: `Ошибка записи: ${e}` }], isError: true };
+      return errorResult(e);
     }
   }
 
-  throw new Error(`Неизвестный инструмент: ${name}`);
+  return errorResult(
+    new VaultPathError(`Неизвестный инструмент: ${String(name).slice(0, 80)}`),
+  );
 });
 
 // Запуск сервера через stdio транспорт
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error(`[ORANGE MCP] Сервер запущен. Vault: ${VAULT_ROOT}`);
+console.error(
+  vaultResolver
+    ? `[ORANGE MCP] Сервер запущен. Vault: ${vaultResolver.realRoot}`
+    : `[ORANGE MCP] Сервер запущен без vault: ${vaultError?.message}`,
+);

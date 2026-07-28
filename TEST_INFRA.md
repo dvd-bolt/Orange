@@ -1,5 +1,7 @@
 # Orange Framework Test Infrastructure
 
+> Архивный отчет предыдущей реализации. Он не описывает текущий runtime и не является подтверждением прохождения тестов. Актуальные команды и покрытие находятся в `README.md` и `.github/workflows/ci.yml`.
+
 This document outlines the testing architecture, methodology, and execution instructions for the Orange local AI assistant framework.
 
 ## Testing Methodology (4-Tier)

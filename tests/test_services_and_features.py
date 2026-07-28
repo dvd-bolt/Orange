@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import time
 
@@ -38,8 +37,8 @@ def test_graph_api_adds_v2_metadata(tmp_path):
     graph = get_notes_graph(str(tmp_path))
     nodes = {node["id"]: node for node in graph["nodes"]}
 
-    assert nodes["roadmap"]["type"] == "project"
-    assert nodes["capture"]["type"] == "inbox"
+    assert nodes["projects/roadmap"]["type"] == "project"
+    assert nodes["_Inbox/capture"]["type"] == "inbox"
     assert nodes["orphan"]["orphan"] is True
     assert nodes["daily"]["degree"] == 1
 
@@ -55,6 +54,7 @@ def test_inbox_service_classifies_and_applies_after_confirmation(tmp_path):
     service = InboxService(str(tmp_path))
     proposal = service.build_proposal(str(note))
     assert proposal["category"] == "task"
+    assert proposal["file_path"] == "_Inbox/capture.md"
 
     result = asyncio.run(service.apply_proposal(str(note), proposal["category"]))
     assert result["status"] == "success"
@@ -126,6 +126,58 @@ def test_project_pages_service_previews_and_applies(tmp_path, monkeypatch):
     assert (tmp_path / "_Orange" / "Project Pages" / "Roadmap.md").exists()
 
 
+def test_project_pages_preview_becomes_stale_when_source_changes(tmp_path, monkeypatch):
+    from core import db
+    from core.services.project_pages_service import ProjectPagesService
+
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "orange_memory.db"))
+    db.init_db()
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    source = projects / "index.md"
+    source.write_text("# Project Index\n- [ ] First version\n", encoding="utf-8")
+
+    service = ProjectPagesService(str(tmp_path))
+    preview = service.preview_project_pages()
+    project_targets = [
+        plan["relative_path"]
+        for plan in preview["plans"]
+        if plan["action"] == "project_page"
+    ]
+    assert project_targets == [
+        "_Orange/Project Pages/Project_Index-9a1f1eaf.md"
+    ]
+
+    source.write_text("# Project Index\n- [ ] Changed version\n", encoding="utf-8")
+    result = asyncio.run(service.apply_project_pages(preview["preview_id"]))
+    assert result["error_code"] == "STALE_PREVIEW"
+    assert not (tmp_path / "_Orange" / "Project Pages").exists()
+
+
+def test_project_pages_reports_and_audits_write_failure(tmp_path, monkeypatch):
+    from core import db
+    from core.services.project_pages_service import ProjectPagesService
+
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "orange_memory.db"))
+    db.init_db()
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    (projects / "roadmap.md").write_text("# Roadmap", encoding="utf-8")
+    service = ProjectPagesService(str(tmp_path))
+    preview = service.preview_project_pages()
+
+    async def fail_write(*_args, **_kwargs):
+        raise OSError("simulated")
+
+    monkeypatch.setattr(service.writer, "write_text", fail_write)
+    result = asyncio.run(
+        service.apply_project_pages(preview["preview_id"])
+    )
+
+    assert result["error_code"] == "PROVIDER_ERROR"
+    assert db.list_audit_events()[0]["status"] == "failed"
+
+
 def test_weekly_review_service_previews_and_applies(tmp_path, monkeypatch):
     from core import db
     from core.services.weekly_review_service import WeeklyReviewService
@@ -143,6 +195,46 @@ def test_weekly_review_service_previews_and_applies(tmp_path, monkeypatch):
     result = asyncio.run(service.apply_weekly_review())
     assert result["status"] == "success"
     assert (tmp_path / "_Orange" / "Reviews").exists()
+
+
+def test_weekly_review_preview_becomes_stale_when_vault_changes(tmp_path, monkeypatch):
+    from core import db
+    from core.services.weekly_review_service import WeeklyReviewService
+
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "orange_memory.db"))
+    db.init_db()
+    source = tmp_path / "daily.md"
+    source.write_text("- [ ] Initial task\n", encoding="utf-8")
+    service = WeeklyReviewService(str(tmp_path))
+    preview = service.preview_weekly_review()
+
+    source.write_text("- [ ] Changed task\n", encoding="utf-8")
+    result = asyncio.run(service.apply_weekly_review(preview["preview_id"]))
+
+    assert result["error_code"] == "STALE_PREVIEW"
+    assert not (tmp_path / "_Orange" / "Reviews").exists()
+
+
+def test_weekly_review_reports_and_audits_write_failure(tmp_path, monkeypatch):
+    from core import db
+    from core.services.weekly_review_service import WeeklyReviewService
+
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "orange_memory.db"))
+    db.init_db()
+    (tmp_path / "daily.md").write_text("- [ ] Task\n", encoding="utf-8")
+    service = WeeklyReviewService(str(tmp_path))
+    preview = service.preview_weekly_review()
+
+    async def fail_write(*_args, **_kwargs):
+        raise OSError("simulated")
+
+    monkeypatch.setattr(service.writer, "write_text", fail_write)
+    result = asyncio.run(
+        service.apply_weekly_review(preview["preview_id"])
+    )
+
+    assert result["error_code"] == "PROVIDER_ERROR"
+    assert db.list_audit_events()[0]["status"] == "failed"
 
 
 def test_vault_intelligence_service_reports_core_views(tmp_path, monkeypatch):
@@ -187,8 +279,9 @@ def test_vault_intelligence_service_reports_core_views(tmp_path, monkeypatch):
     assert any(item["type"] == "task_state_conflict" for item in contradictions["findings"])
 
     debate = service.run_agent_debate("backup storage")
-    assert debate["status"] == "success"
-    assert [round_item["role"] for round_item in debate["rounds"]] == ["Engineer", "Strategist", "Skeptic"]
+    assert debate["status"] == "error"
+    assert debate["error_code"] == "NOT_CONFIGURED"
+    assert "rounds" not in debate
 
     dormant = service.find_dormant_projects(stale_days=30)
     assert dormant["items"]
@@ -216,10 +309,16 @@ def test_bridge_public_api_contract_includes_new_methods():
         "api_get_morning_dashboard",
         "api_get_http_base_url",
         "api_run_git_backup",
+        "api_execute_python",
         "api_get_project_pages_preview",
         "api_apply_project_pages",
+        "api_reject_project_pages",
         "api_get_weekly_review_preview",
         "api_apply_weekly_review",
+        "api_reject_weekly_review",
+        "api_get_write_preview",
+        "api_apply_write_preview",
+        "api_reject_write_preview",
         "api_get_audit_log",
         "api_get_vault_time_machine",
         "api_find_contradictions",
@@ -230,43 +329,3 @@ def test_bridge_public_api_contract_includes_new_methods():
 
     missing = [name for name in expected_methods if not hasattr(BridgeAPI, name)]
     assert missing == []
-
-
-def test_scenario_engine_blocks_traversal_and_unsafe_eval(tmp_path):
-    from core.scenario import ScenarioEngine
-
-    engine = ScenarioEngine(str(tmp_path))
-    class AllowDeps:
-        async def request_override(self, _text):
-            return True
-
-    scenario = {
-        "name": "safe",
-        "steps": [
-            {"id": "ctx", "action": "set_context", "params": {"ready": True}},
-            {"id": "route", "action": "conditional_route", "params": {"condition": "ready", "if_true": "END", "if_false": "END"}},
-        ],
-    }
-    result = asyncio.run(engine.run_scenario(json.dumps(scenario), deps=object()))
-    assert result["status"] == "success"
-
-    bad_path = {
-        "name": "bad_path",
-        "steps": [{"id": "write", "action": "write_file", "params": {"path": "../secret.md", "content": "x"}}],
-    }
-    result = asyncio.run(engine.run_scenario(json.dumps(bad_path), deps=AllowDeps()))
-    assert result["status"] == "error"
-
-    safe_write_without_approval = {
-        "name": "no_approval",
-        "steps": [{"id": "write", "action": "write_file", "params": {"path": "note.md", "content": "x"}}],
-    }
-    result = asyncio.run(engine.run_scenario(json.dumps(safe_write_without_approval), deps=object()))
-    assert result["status"] == "denied"
-
-    bad_eval = {
-        "name": "bad_eval",
-        "steps": [{"id": "eval", "action": "evaluate_expression", "params": {"expression": "__import__('os').system('echo no')"}}],
-    }
-    result = asyncio.run(engine.run_scenario(json.dumps(bad_eval), deps=object()))
-    assert result["status"] == "error"

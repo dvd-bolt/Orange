@@ -1,99 +1,190 @@
-import os
+from __future__ import annotations
+
 import re
-from typing import Dict, List, Set, Any
+from collections import defaultdict
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set
+from core.path_safety import VaultPathResolver
 
-def get_notes_graph(vault_path: str) -> Dict[str, List[Dict[str, Any]]]:
-    """
-    Parses all markdown files in the vault to collect note nodes and
-    extract their inner Wikilinks [[TargetNote]] as graph edges.
-    Returns a D3.js compatible dict with "nodes" and "links".
-    """
-    abs_vault = os.path.abspath(vault_path)
-    nodes: List[Dict[str, Any]] = []
-    links: List[Dict[str, Any]] = []
-    node_ids: Set[str] = set()
-    node_content: Dict[str, str] = {}
+WIKILINK_PATTERN = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]")
 
-    # Gather md files
-    note_files: List[str] = []
-    for root, _, files in os.walk(abs_vault):
-        for file in files:
-            if file.endswith('.md'):
-                file_path = os.path.join(root, file)
-                # Ignore service/hidden paths
-                if any(part.startswith('.') for part in file_path.replace(abs_vault, '').split(os.sep)):
-                    continue
-                note_files.append(file_path)
 
-    # First pass: collect note nodes
-    for file_path in note_files:
-        name = os.path.splitext(os.path.basename(file_path))[0]
-        if name and not name.startswith('.'):
-            node_ids.add(name)
-            relative_path = os.path.relpath(file_path, abs_vault)
-            normalized_parts = {part.lower() for part in relative_path.split(os.sep)}
-            
-            # Simple grouping rule (e.g. check if in 04-projects folder)
-            group = 1
-            note_type = "note"
-            if "04-projects" in file_path or "projects" in normalized_parts:
-                group = 2
-                note_type = "project"
-            elif "_inbox" in normalized_parts:
-                group = 3
-                note_type = "inbox"
-                
-            nodes.append({"id": name, "group": group, "path": relative_path, "type": note_type})
+def get_notes_graph(
+    vault_path: str,
+    *,
+    exclude_generated: bool = False,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Build a path-stable graph for Markdown notes in an Obsidian vault."""
+    resolver = VaultPathResolver(vault_path)
+    root = resolver.root
+    if not root.is_dir():
+        return {"nodes": [], "links": []}
 
-    # Second pass: extract connections
-    for file_path in note_files:
-        source_name = os.path.splitext(os.path.basename(file_path))[0]
-        if source_name not in node_ids:
-            continue
+    records: Dict[str, Dict[str, Any]] = {}
+    aliases: Dict[str, Set[str]] = defaultdict(set)
+
+    for raw_path in resolver.iter_notes(exclude_generated=exclude_generated):
         try:
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
-            node_content[source_name] = content
-            # Regex matching WikiLinks: [[TargetName]] or [[TargetName|Alias]]
-            matches = re.findall(r'\[\[([^\]|]+)(?:\|[^\]]+)?\]\]', content)
-            for target_name in matches:
-                target_name = target_name.strip()
-                if target_name in node_ids and source_name != target_name:
-                    # De-duplicate links to avoid rendering duplicate lines
-                    link_exists = any(
-                        (l["source"] == source_name and l["target"] == target_name) or
-                        (l["source"] == target_name and l["target"] == source_name)
-                        for l in links
-                    )
-                    if not link_exists:
-                        links.append({
-                            "source": source_name,
-                            "target": target_name,
-                            "value": 1
-                        })
-        except Exception as e:
-            print(f"[GraphAPI Warning] Failed to parse links in {file_path}: {e}")
+            relative = raw_path.relative_to(root)
+        except ValueError:
+            continue
 
-    degrees = {node_id: 0 for node_id in node_ids}
-    for link in links:
-        degrees[link["source"]] = degrees.get(link["source"], 0) + 1
-        degrees[link["target"]] = degrees.get(link["target"], 0) + 1
+        relative_path = relative.as_posix()
+        note_id = relative.with_suffix("").as_posix()
+        try:
+            content = resolver.read_note_text(raw_path)
+        except OSError:
+            content = ""
 
-    for node in nodes:
-        degree = degrees.get(node["id"], 0)
-        content = node_content.get(node["id"], "")
-        existing_targets = set(re.findall(r'\[\[([^\]|]+)(?:\|[^\]]+)?\]\]', content))
-        suggestions = []
-        lowered_content = content.lower()
-        for candidate in sorted(node_ids):
-            if candidate == node["id"] or candidate in existing_targets:
+        normalized_parts = {part.lower() for part in relative.parts}
+        note_type = "note"
+        group = 1
+        if "04-projects" in normalized_parts or "projects" in normalized_parts:
+            note_type = "project"
+            group = 2
+        elif "_inbox" in normalized_parts:
+            note_type = "inbox"
+            group = 3
+
+        label = raw_path.stem
+        records[note_id] = {
+            "id": note_id,
+            "label": label,
+            "group": group,
+            "path": relative_path,
+            "type": note_type,
+            "content": content,
+        }
+        aliases[note_id.lower()].add(note_id)
+        aliases[label.lower()].add(note_id)
+        for alias in _extract_aliases(content):
+            aliases[alias.lower()].add(note_id)
+
+    links: List[Dict[str, Any]] = []
+    linked_pairs: Set[tuple[str, str]] = set()
+    outgoing: Dict[str, Set[str]] = defaultdict(set)
+
+    for source_id, record in records.items():
+        for raw_target in WIKILINK_PATTERN.findall(record["content"]):
+            target_id = _resolve_wikilink(raw_target.strip(), source_id, records, aliases)
+            if not target_id or target_id == source_id:
                 continue
-            if candidate.lower() in lowered_content:
-                suggestions.append(candidate)
-            if len(suggestions) >= 5:
-                break
-        node["degree"] = degree
-        node["orphan"] = degree == 0
-        node["suggested_links"] = suggestions
+            outgoing[source_id].add(target_id)
+            pair = tuple(sorted((source_id, target_id)))
+            if pair in linked_pairs:
+                continue
+            linked_pairs.add(pair)
+            links.append({"source": source_id, "target": target_id, "value": 1})
 
+    degrees = {note_id: 0 for note_id in records}
+    for link in links:
+        degrees[link["source"]] += 1
+        degrees[link["target"]] += 1
+
+    nodes = []
+    for note_id, record in records.items():
+        suggestions = _suggest_links(note_id, record["content"], records, outgoing[note_id])
+        nodes.append({
+            "id": note_id,
+            "label": record["label"],
+            "group": record["group"],
+            "path": record["path"],
+            "type": record["type"],
+            "degree": degrees[note_id],
+            "orphan": degrees[note_id] == 0,
+            "suggested_links": suggestions,
+        })
+
+    links.sort(key=lambda item: (item["source"].lower(), item["target"].lower()))
     return {"nodes": nodes, "links": links}
+
+
+def _resolve_wikilink(
+    raw_target: str,
+    source_id: str,
+    records: Dict[str, Dict[str, Any]],
+    aliases: Dict[str, Set[str]],
+) -> Optional[str]:
+    normalized = raw_target.replace("\\", "/").strip().removesuffix(".md")
+    exact = aliases.get(normalized.lower(), set())
+    if len(exact) == 1:
+        return next(iter(exact))
+
+    source_parent = Path(source_id).parent
+    sibling = (source_parent / normalized).as_posix()
+    if sibling in records:
+        return sibling
+
+    basename_matches = aliases.get(Path(normalized).name.lower(), set())
+    if len(basename_matches) == 1:
+        return next(iter(basename_matches))
+    return None
+
+
+def _suggest_links(
+    source_id: str,
+    content: str,
+    records: Dict[str, Dict[str, Any]],
+    existing_targets: Set[str],
+) -> List[str]:
+    suggestions = []
+    lowered = _content_for_suggestions(content).lower()
+    for candidate_id, candidate in sorted(records.items(), key=lambda item: item[0].lower()):
+        if candidate_id == source_id or candidate_id in existing_targets:
+            continue
+        label = candidate["label"].strip()
+        if len(label) < 5:
+            continue
+        pattern = rf"(?<![\w]){re.escape(label.lower())}(?![\w])"
+        matches = re.findall(pattern, lowered)
+        if len(label) < 8 and " " not in label and len(matches) < 2:
+            continue
+        if matches:
+            suggestions.append(candidate_id)
+        if len(suggestions) >= 5:
+            break
+    return suggestions
+
+
+def _extract_aliases(content: str) -> List[str]:
+    if not content.startswith("---"):
+        return []
+    end = content.find("\n---", 3)
+    if end == -1:
+        return []
+    frontmatter = content[3:end]
+    aliases = []
+    lines = frontmatter.splitlines()
+    collecting_list = False
+    for line in lines:
+        key_match = re.match(r"(?i)^\s*aliases?\s*:\s*(.*)$", line)
+        if key_match:
+            value = key_match.group(1).strip()
+            collecting_list = not value
+            if value.startswith("[") and value.endswith("]"):
+                aliases.extend(
+                    item.strip().strip("\"'")
+                    for item in value[1:-1].split(",")
+                    if item.strip()
+                )
+            elif value:
+                aliases.append(value.strip("\"'"))
+            continue
+        if collecting_list:
+            item_match = re.match(r"^\s*-\s+(.+?)\s*$", line)
+            if item_match:
+                aliases.append(item_match.group(1).strip().strip("\"'"))
+                continue
+            if line.strip():
+                collecting_list = False
+    return list(dict.fromkeys(alias for alias in aliases if alias))
+
+
+def _content_for_suggestions(content: str) -> str:
+    if content.startswith("---"):
+        end = content.find("\n---", 3)
+        if end != -1:
+            content = content[end + 4:]
+    content = re.sub(r"```.*?```", " ", content, flags=re.DOTALL)
+    content = WIKILINK_PATTERN.sub(" ", content)
+    return content

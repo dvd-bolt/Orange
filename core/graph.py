@@ -1,7 +1,6 @@
 from __future__ import annotations
 import os
 import re
-import ast
 import sqlite3
 import json
 from dataclasses import dataclass, field, asdict
@@ -14,6 +13,7 @@ from core.db import DB_PATH
 class OrangeGraphState:
     user_prompt: str
     profile_name: str
+    research_query: Optional[str] = None
     dynamic_instruction: Optional[str] = None
     chat_history_context: str = ""
     relevant_files_context: str = ""
@@ -43,15 +43,28 @@ async def save_graph_state(session_id: str, step_name: str, state: OrangeGraphSt
         ''')
         # Convert state to dict, handle non-serializable fields
         state_dict = asdict(state)
-        state_dict["attachments"] = [str(x) for x in state_dict.get("attachments", [])]
+        state_dict["attachments"] = []
         state_json = json.dumps(state_dict)
         conn.execute(
             "INSERT INTO graph_checkpoints (session_id, step_name, state_json) VALUES (?, ?, ?)",
             (session_id, step_name, state_json)
         )
+        conn.execute(
+            """
+            DELETE FROM graph_checkpoints
+            WHERE session_id = ?
+              AND id NOT IN (
+                  SELECT id FROM graph_checkpoints
+                  WHERE session_id = ?
+                  ORDER BY id DESC
+                  LIMIT 20
+              )
+            """,
+            (session_id, session_id),
+        )
         conn.commit()
     except Exception as e:
-        print(f"[FSM Checkpoint Error] Failed to save state: {e}")
+        print(f"[FSM Checkpoint Error] Failed to save state: {type(e).__name__}")
     finally:
         conn.close()
 
@@ -72,10 +85,31 @@ async def load_graph_state(session_id: str) -> Optional[OrangeGraphState]:
             filtered_data = {k: v for k, v in data.items() if k in valid_keys}
             return OrangeGraphState(**filtered_data)
     except Exception as e:
-        print(f"[FSM Checkpoint Error] Failed to load state: {e}")
+        print(f"[FSM Checkpoint Error] Failed to load state: {type(e).__name__}")
     finally:
         conn.close()
     return None
+
+
+async def delete_graph_state(session_id: str) -> None:
+    """Remove checkpoints for transient, non-chat runs."""
+    def delete_rows():
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            try:
+                conn.execute(
+                    "DELETE FROM graph_checkpoints WHERE session_id = ?",
+                    (session_id,),
+                )
+            except sqlite3.OperationalError:
+                return
+            conn.commit()
+        finally:
+            conn.close()
+
+    import asyncio
+
+    await asyncio.to_thread(delete_rows)
 
 
 # --- Class-Based BaseNode Topologies ---
@@ -105,12 +139,32 @@ class DeepResearchNode(BaseNode[OrangeGraphState, OrangeDeps, str]):
     """
     Deep Research Node: Gathers findings from OSINT / external research.
     """
-    async def run(self, ctx: GraphRunContext[OrangeGraphState, OrangeDeps]) -> DraftNode:
+    async def run(self, ctx: GraphRunContext[OrangeGraphState, OrangeDeps]) -> DraftNode | End[str]:
         print("[FSM] Entering Deep Research Node...")
         from core.bridge import log_to_telemetry
         log_to_telemetry("EXEC", "FSM: Entering Deep Research Node")
-        ctx.state.relevant_files_context += "\n[OSINT Research: Mock external web search completed]"
         await save_graph_state(ctx.state.session_id, "deep_research_node", ctx.state)
+        from core.research import (
+            ResearchProviderError,
+            ResearchUnavailableError,
+            collect_web_research,
+            format_research_context,
+        )
+
+        try:
+            research = await collect_web_research(
+                ctx.state.research_query or ctx.state.user_prompt
+            )
+        except ResearchUnavailableError as exc:
+            message = f"[NOT_CONFIGURED] {exc}"
+            log_to_telemetry("WARN", message)
+            return End(message)
+        except ResearchProviderError as exc:
+            message = f"[PROVIDER_ERROR] {exc}"
+            log_to_telemetry("WARN", message)
+            return End(message)
+
+        ctx.state.relevant_files_context += format_research_context(research)
         return DraftNode()
 
 @dataclass
@@ -118,31 +172,19 @@ class ProjectManagerNode(BaseNode[OrangeGraphState, OrangeDeps, str]):
     """
     Project Manager Node: Runs automated routing and task adding.
     """
-    async def run(self, ctx: GraphRunContext[OrangeGraphState, OrangeDeps]) -> SelfReviewNode:
+    async def run(self, ctx: GraphRunContext[OrangeGraphState, OrangeDeps]) -> DraftNode:
         print("[FSM] Entering Project Manager Node...")
         from core.bridge import log_to_telemetry
         log_to_telemetry("EXEC", "FSM: Entering Project Manager Node")
-        from core.tools import add_task
-        class MockRunContext:
-            def __init__(self, deps):
-                self.deps = deps
-        ctx_mock = MockRunContext(ctx.deps)
-        try:
-            # PM profile routing: automatically add task
-            res = await add_task(ctx_mock, "PM_Tasks.md", "Task created by PM node transition")
-            ctx.state.draft_response = f"PM Action Result: {res}"
-        except Exception as e:
-            ctx.state.draft_response = f"PM Action Error: {e}"
-            
         await save_graph_state(ctx.state.session_id, "project_manager_node", ctx.state)
-        return SelfReviewNode()
+        return DraftNode()
 
 @dataclass
 class DraftNode(BaseNode[OrangeGraphState, OrangeDeps, str]):
     """
     Draft Node: Invokes the Orange agent to generate/update the response.
     """
-    async def run(self, ctx: GraphRunContext[OrangeGraphState, OrangeDeps]) -> VerifyNode | SelfReviewNode:
+    async def run(self, ctx: GraphRunContext[OrangeGraphState, OrangeDeps]) -> SelfReviewNode:
         print(f"[FSM] Entering Draft Node (attempt {ctx.state.loop_count + 1})...")
         from core.bridge import log_to_telemetry
         log_to_telemetry("EXEC", f"FSM: Entering Draft Node (attempt {ctx.state.loop_count + 1})")
@@ -172,18 +214,25 @@ class DraftNode(BaseNode[OrangeGraphState, OrangeDeps, str]):
             base_sys_prompt = PROFILES.get(ctx.state.profile_name, PROFILES["base"])
             current_model = HEAVY_MODEL if ctx.state.profile_name in ["deep_research", "coder"] else LITE_MODEL
             
-        # Slayered Context Walk-up scanning
+        # Layered context walk-up scanning
         from core.profiles import buildSessionContext, buildIdentityContext
-        import glob
+        from core.path_safety import VaultPathResolver
         
         note_title_match = re.search(r"Obsidian Note:\s*'(.*?)'", ctx.state.user_prompt)
         current_note_path = None
         vault_path = ctx.deps.obsidian_vault_path
         if note_title_match:
             note_title = note_title_match.group(1)
-            matches = glob.glob(os.path.join(vault_path, "**", f"{note_title}.md"), recursive=True)
-            if matches:
-                current_note_path = matches[0]
+            try:
+                current_note_path = str(
+                    VaultPathResolver(vault_path).resolve_note(
+                        note_title,
+                        must_exist=True,
+                        search_by_name=True,
+                    )
+                )
+            except ValueError:
+                current_note_path = None
                 
         identity_context = buildIdentityContext(vault_path) if vault_path else ""
         walkup_context = buildSessionContext(vault_path, current_note_path) if vault_path else ""
@@ -211,102 +260,20 @@ class DraftNode(BaseNode[OrangeGraphState, OrangeDeps, str]):
             run_payload,
             model=current_model,
             deps=ctx.deps,
-            model_settings={"system_prompt": sys_prompt}
+            instructions=sys_prompt,
+            model_settings={"timeout": 120.0},
+            metadata={
+                "orange_profile": ctx.state.profile_name,
+                "orange_tier": "heavy" if current_model == HEAVY_MODEL else "lite",
+            },
         )
         
         response_text = getattr(res, 'data', getattr(res, 'output', str(res)))
         ctx.state.draft_response = response_text
         
-        # 3. Detect Python code block for verification
-        code_blocks = re.findall(r"```python\n(.*?)```", response_text, re.DOTALL)
-        if code_blocks:
-            ctx.state.code_to_verify = code_blocks[-1].strip() # Check the last code block
-            print(f"[FSM] Found Python code block. Routing to Verify Node.")
-            log_to_telemetry("EXEC", "FSM: Found Python code block. Routing to Verify Node.")
-            return VerifyNode()
-        
-        print(f"[FSM] No Python code block found. Routing to Self-Review Node.")
-        log_to_telemetry("EXEC", "FSM: No Python code block. Routing to Self-Review Node.")
+        print("[FSM] Draft completed. Code blocks require an explicit Execute action in the UI.")
+        log_to_telemetry("OK", "FSM: Draft completed without automatic code execution")
         return SelfReviewNode()
-
-@dataclass
-class VerifyNode(BaseNode[OrangeGraphState, OrangeDeps, str]):
-    """
-    Verify Node: Performs static AST validation and executes code.
-    """
-    async def run(self, ctx: GraphRunContext[OrangeGraphState, OrangeDeps]) -> DraftNode | SelfReviewNode:
-        print("[FSM] Entering Verify Node...")
-        from core.bridge import log_to_telemetry
-        log_to_telemetry("EXEC", "FSM: Entering Verify Node")
-        await save_graph_state(ctx.state.session_id, "verify_node", ctx.state)
-        
-        code = ctx.state.code_to_verify
-        if not code:
-            return SelfReviewNode()
-            
-        # 1. Pre-run AST Syntax validation
-        try:
-            ast.parse(code)
-        except SyntaxError as se:
-            print(f"[FSM Verifier Warning] Static AST check failed: {se}")
-            log_to_telemetry("WARN", f"AST Syntax check failed: {se}")
-            ctx.state.verification_feedback = f"Ошибка синтаксиса Python (AST check):\n{se}"
-            ctx.state.loop_count += 1
-            if ctx.state.loop_count < 3:
-                return DraftNode()
-            else:
-                ctx.state.draft_response += f"\n\n**Ошибка валидации кода:**\n```text\n{se}\n```"
-                return SelfReviewNode()
-
-        # 2. Path and import validation (Safe local executor rules)
-        banned_imports = ["subprocess", "pty", "ctypes", "pickle"]
-        found_banned = [imp for imp in banned_imports if re.search(fr"\b(import\s+{imp}|from\s+{imp})\b", code)]
-        if found_banned:
-            msg = f"Безопасность: Импорт библиотек {found_banned} запрещен в песочнице."
-            print(f"[FSM Verifier Warning] Security violation: {msg}")
-            log_to_telemetry("FAIL", f"Security violation: {msg}")
-            ctx.state.verification_feedback = msg
-            ctx.state.loop_count += 1
-            if ctx.state.loop_count < 3:
-                return DraftNode()
-            else:
-                ctx.state.draft_response += f"\n\n**Ошибка безопасности:**\n{msg}"
-                return SelfReviewNode()
-
-        # 3. Execution (Post-run)
-        try:
-            from core.tools import execute_python
-            print("[FSM] Executing python sandbox via execute_python tool...")
-            log_to_telemetry("EXEC", "Executing Python sandbox code")
-            result = await execute_python(ctx, code)
-            
-            if "Ошибка выполнения скрипта" in result or "Критическая ошибка" in result:
-                print("[FSM Verifier Warning] Sandbox execution failed.")
-                log_to_telemetry("FAIL", "Sandbox execution failed")
-                ctx.state.verification_feedback = result
-                ctx.state.loop_count += 1
-                if ctx.state.loop_count < 3:
-                    return DraftNode()
-                else:
-                    ctx.state.draft_response += f"\n\n{result}"
-                    return SelfReviewNode()
-            
-            # Success
-            print("[FSM] Sandbox execution succeeded.")
-            log_to_telemetry("OK", "Sandbox execution succeeded")
-            ctx.state.executed_code_output = result
-            ctx.state.draft_response += f"\n\n### Результат выполнения кода:\n{result}"
-            return SelfReviewNode()
-            
-        except Exception as e:
-            print(f"[FSM Verifier Error] Exception during execution: {e}")
-            ctx.state.verification_feedback = str(e)
-            ctx.state.loop_count += 1
-            if ctx.state.loop_count < 3:
-                return DraftNode()
-            else:
-                ctx.state.draft_response += f"\n\n**Ошибка запуска песочницы:**\n{e}"
-                return SelfReviewNode()
 
 @dataclass
 class SelfReviewNode(BaseNode[OrangeGraphState, OrangeDeps, str]):
@@ -326,12 +293,21 @@ class SelfReviewNode(BaseNode[OrangeGraphState, OrangeDeps, str]):
             try:
                 from core.git_backup import auto_backup_vault
                 push_enabled = runtime_flag("auto_push_enabled", "OFF")
-                print(f"[FSM] Triggering automatic Git backup for vault: {ctx.deps.obsidian_vault_path}")
-                log_to_telemetry("EXEC", f"Git backup triggered for vault: {ctx.deps.obsidian_vault_path}")
+                print("[FSM] Triggering automatic Git backup.")
+                log_to_telemetry("EXEC", "Git backup triggered")
                 backup_res = await auto_backup_vault(ctx.deps.obsidian_vault_path, push=push_enabled)
                 print(f"[FSM] Git backup status: {backup_res}")
                 if isinstance(backup_res, dict):
-                    backup_status = "OK" if backup_res.get("status") == "success" else "FAIL"
+                    successful_statuses = {
+                        "success",
+                        "success_local_only",
+                        "no_changes",
+                    }
+                    backup_status = (
+                        "OK"
+                        if backup_res.get("status") in successful_statuses
+                        else "FAIL"
+                    )
                     backup_msg = backup_res.get("message", "done")
                 else:
                     backup_res_str = str(backup_res)
@@ -341,8 +317,13 @@ class SelfReviewNode(BaseNode[OrangeGraphState, OrangeDeps, str]):
                 db.add_audit_event("git_backup", backup_status.lower(), backup_msg)
                 log_to_telemetry(backup_status, f"Git backup status: {backup_msg}")
             except Exception as e:
-                print(f"[FSM Warning] Failed to run Git backup: {e}")
-                log_to_telemetry("WARN", f"Git backup failed: {e}")
+                print(
+                    f"[FSM Warning] Failed to run Git backup: {type(e).__name__}"
+                )
+                log_to_telemetry(
+                    "WARN",
+                    f"Git backup failed: {type(e).__name__}",
+                )
                 
         return End(ctx.state.output_text)
 
@@ -358,7 +339,6 @@ g.add(
     g.node(DeepResearchNode),
     g.node(ProjectManagerNode),
     g.node(DraftNode),
-    g.node(VerifyNode),
     g.node(SelfReviewNode),
     g.edge_from(g.start_node).to(start_step)
 )
@@ -370,5 +350,4 @@ research_node = ResearchNode
 deep_research_node = DeepResearchNode
 project_manager_node = ProjectManagerNode
 draft_node = DraftNode
-verify_node = VerifyNode
 self_review_node = SelfReviewNode

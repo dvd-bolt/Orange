@@ -1,24 +1,32 @@
+use pyo3::exceptions::{PyFileNotFoundError, PyIOError};
 use pyo3::prelude::*;
 use std::fs;
-use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
-use reqwest::blocking::get;
+use std::path::{Path, PathBuf};
 
-// Вспомогательная рекурсивная функция для обхода всех подпапок
-fn visit_dirs(dir: &Path, files_list: &mut String) -> std::io::Result<()> {
+fn visit_dirs(root: &Path, dir: &Path, files: &mut Vec<String>) -> std::io::Result<()> {
+    let metadata = fs::symlink_metadata(dir)?;
+    if metadata.file_type().is_symlink() {
+        return Ok(());
+    }
+    let canonical_dir = fs::canonicalize(dir)?;
+    if !canonical_dir.starts_with(root) {
+        return Ok(());
+    }
     if dir.is_dir() {
-        for entry in fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_dir() {
-                let _ = visit_dirs(&path, files_list); // Рекурсивно ныряем в подпапку
-            } else if let Some(ext) = path.extension() {
-                if ext == "md" {
-                    // Обязательно сохраняем полный путь, чтобы агент мог его прочитать
-                    if let Some(path_str) = path.to_str() {
-                        files_list.push_str(&format!("- {}\n", path_str));
-                    }
-                }
+        let mut entries: Vec<PathBuf> = fs::read_dir(dir)?
+            .map(|entry| entry.map(|item| item.path()))
+            .collect::<Result<Vec<_>, _>>()?;
+        entries.sort();
+
+        for path in entries {
+            let file_type = fs::symlink_metadata(&path)?.file_type();
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
+                visit_dirs(root, &path, files)?;
+            } else if file_type.is_file() && path.extension().is_some_and(|ext| ext == "md") {
+                files.push(path.to_string_lossy().into_owned());
             }
         }
     }
@@ -26,69 +34,27 @@ fn visit_dirs(dir: &Path, files_list: &mut String) -> std::io::Result<()> {
 }
 
 #[pyfunction]
-fn scan_vault_fast(path: String) -> PyResult<String> {
+fn scan_vault_fast(path: String) -> PyResult<Vec<String>> {
     let dir_path = Path::new(&path);
-    if !dir_path.exists() || !dir_path.is_dir() {
-        return Ok(format!("Ошибка: Директория не найдена: {}", path));
+    if !dir_path.exists() {
+        return Err(PyFileNotFoundError::new_err(
+            "Vault directory does not exist",
+        ));
+    }
+    if !dir_path.is_dir() {
+        return Err(PyIOError::new_err("Vault path is not a directory"));
     }
 
-    let mut files_list = String::new();
-    let _ = visit_dirs(dir_path, &mut files_list);
-    
-    if files_list.is_empty() {
-        Ok(format!("В директории и подпапках {} нет .md файлов.", path))
-    } else {
-        // Предохранитель от переполнения: отдаем максимум 50 файлов
-        let lines: Vec<&str> = files_list.lines().collect();
-        if lines.len() > 50 {
-            let truncated = lines[..50].join("\n");
-            Ok(format!("Найдены сотни заметок. Вот первые 50 абсолютных путей:\n{}\n...[остальные скрыты ради экономии контекста]", truncated))
-        } else {
-            Ok(format!("Найдены заметки:\n{}", files_list))
-        }
-    }
-}
-
-#[pyfunction]
-fn read_file_fast(file_path: String) -> PyResult<String> {
-    match fs::read_to_string(&file_path) {
-        Ok(content) => Ok(content),
-        Err(e) => Ok(format!("Ошибка при чтении файла {}: {}", file_path, e)),
-    }
-}
-
-#[pyfunction]
-fn write_file_safe(file_path: String, content: String) -> PyResult<String> {
-    let path = Path::new(&file_path);
-    if path.exists() {
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-        let backup_path = format!("{}.{}.bak", file_path, timestamp);
-        if let Err(e) = fs::copy(&path, &backup_path) {
-            return Ok(format!("Ошибка при создании бэкапа: {}", e));
-        }
-    }
-    match fs::write(&path, content) {
-        Ok(_) => Ok(format!("Файл {} успешно сохранен (Бэкап создан).", file_path)),
-        Err(e) => Ok(format!("Ошибка при записи файла {}: {}", file_path, e)),
-    }
-}
-
-#[pyfunction]
-fn fetch_website_fast(url: String) -> PyResult<String> {
-    match get(&url) {
-        Ok(response) => match response.text() {
-            Ok(text) => Ok(if text.len() > 15000 { text[..15000].to_string() } else { text }),
-            Err(e) => Ok(format!("Ошибка текста: {}", e)),
-        },
-        Err(e) => Ok(format!("Ошибка сети: {}", e)),
-    }
+    let canonical_root = fs::canonicalize(dir_path)
+        .map_err(|_| PyIOError::new_err("Vault directory could not be opened"))?;
+    let mut files = Vec::new();
+    visit_dirs(&canonical_root, &canonical_root, &mut files)
+        .map_err(|_| PyIOError::new_err("Vault directory could not be scanned"))?;
+    Ok(files)
 }
 
 #[pymodule]
 fn orange_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(scan_vault_fast, m)?)?;
-    m.add_function(wrap_pyfunction!(read_file_fast, m)?)?;
-    m.add_function(wrap_pyfunction!(write_file_safe, m)?)?;
-    m.add_function(wrap_pyfunction!(fetch_website_fast, m)?)?;
     Ok(())
 }

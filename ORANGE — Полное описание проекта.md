@@ -2,6 +2,8 @@
 > **Репозиторий:** [https://github.com/dvd-bolt/Orange](https://github.com/dvd-bolt/Orange)  
 > **Рабочая директория:** `C:\orange\`
 
+> **Статус:** архивное описание предыдущей реализации. Актуальная документация: `README.md`, `ARCHITECTURE.md`, `SECURITY.md`.
+
 ---
 
 ## 🧠 Что такое ORANGE?

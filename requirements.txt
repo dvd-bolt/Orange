@@ -1,51 +1,48 @@
 # Core AI Framework
-pydantic-ai
-pydantic
-pydantic-graph
-pydantic-settings
+pydantic-ai>=2.15,<3
+pydantic>=2.13,<3
+pydantic-graph>=2.15,<3
+pydantic-settings>=2.14,<3
 
 # MCP (Model Context Protocol)
-mcp
+mcp>=1.28,<2
 
 # Environment
-python-dotenv
+python-dotenv>=1.2,<2
 
 # GUI
-pywebview
+pywebview>=6.2,<7
 
 # File system watching (Obsidian integration)
-watchdog
+watchdog>=6,<7
 
 # Async file I/O
-aiofiles
+aiofiles>=25,<26
 
 # Retry logic for atomic writes
-tenacity
+tenacity>=9,<10
 
 # Markdown AST parsing
-mistletoe
+mistletoe>=1.4,<2
 
 # PDF text extraction
-pypdf
+pypdf>=6,<7
 
 # HTTP client (async)
-httpx
+httpx>=0.28,<0.29
 
 # HTML parsing (OSINT)
-beautifulsoup4
+beautifulsoup4>=4.14,<5
 
 # Web search (OSINT)
-duckduckgo-search
+ddgs>=9,<10
 
 # Browser automation (deep_analyze_website)
-playwright
+playwright>=1.55,<2
 
 # Telegram userbot daemon
-telethon
-
-# Image processing for Web UI / Browser annotations
-Pillow
+telethon>=1.42,<2
 
 # Development / checks
-pytest
-maturin
+pytest>=9,<10
+maturin>=1.13,<2

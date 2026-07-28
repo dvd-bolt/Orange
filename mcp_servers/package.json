@@ -6,7 +6,8 @@
   "private": true,
   "scripts": {
     "start": "bun run index.ts",
-    "dev": "bun --watch index.ts"
+    "dev": "bun --watch index.ts",
+    "test": "bun test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"

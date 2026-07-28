@@ -32,8 +32,12 @@ def test_note_payload_blocks_traversal_and_returns_preview(tmp_path):
 
 
 def test_mcp_server_uses_resolved_vault_paths():
-    source = Path("mcp_servers/index.ts").read_text(encoding="utf-8")
+    server_source = Path("mcp_servers/index.ts").read_text(encoding="utf-8")
+    resolver_source = Path("mcp_servers/vault_paths.ts").read_text(encoding="utf-8")
 
-    assert "function resolveVaultPath" in source
-    assert "relative(VAULT_ROOT, fullPath)" in source
-    assert "startsWith(VAULT_PATH)" not in source
+    assert "new VaultPathResolver" in server_source
+    assert "vaultResolver.resolve" in server_source
+    assert "relative(root, candidate)" in resolver_source
+    assert "realpathSync" in resolver_source
+    assert "isSymbolicLink" in resolver_source
+    assert "startsWith(VAULT_PATH)" not in server_source

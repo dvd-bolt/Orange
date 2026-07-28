@@ -1,7 +1,7 @@
 # Сборка orange_core (Rust → Python модуль)
 
-Модуль `orange_core` — нативное расширение Python на Rust через PyO3/Maturin.  
-Обеспечивает быструю работу с файловой системой и HTTP прямо из Python без GIL-ограничений.
+Модуль `orange_core` — нативное расширение Python на Rust через PyO3/Maturin.
+Он ускоряет рекурсивное сканирование vault. Проверка пользовательского пути выполняется общим Python `VaultPathResolver` до вызова модуля.
 
 ## Требования
 
@@ -33,37 +33,31 @@ pip install target/wheels/orange_core-*.whl
 [package]
 name = "orange_core"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 name = "orange_core"
 crate-type = ["cdylib"]   # ОБЯЗАТЕЛЬНО для PyO3
 
 [dependencies]
-pyo3 = { version = "0.21", features = ["extension-module"] }
+pyo3 = { version = "0.28.3", features = ["extension-module"] }
 ```
 
 ## Экспортируемые функции (src/lib.rs)
 
 | Функция | Сигнатура | Описание |
 |---------|-----------|---------|
-| `scan_vault_fast` | `(path: str) -> str` | Рекурсивный поиск всех `.md` файлов, возвращает JSON-список путей |
-| `read_file_fast` | `(path: str) -> str` | Быстрое чтение файла в UTF-8 |
-| `fetch_website_fast` | `(url: str) -> str` | HTTP GET запрос, возвращает тело ответа как строку |
+| `scan_vault_fast` | `(path: str) -> list[str]` | Рекурсивный поиск `.md` без перехода по symlink; возвращает стабильный список абсолютных путей |
 
 ## Пример использования в Python
 
 ```python
 import orange_core
 
-# Список всех .md файлов в vault
-notes_json = orange_core.scan_vault_fast("C:/Users/user/ObsidianVault")
+# Стабильный список абсолютных путей .md файлов
+notes = orange_core.scan_vault_fast("examples/test_vault")
 
-# Чтение файла
-content = orange_core.read_file_fast("examples/test_vault/projects/roadmap.md")
-
-# HTTP запрос
-html = orange_core.fetch_website_fast("https://example.com")
+assert any(path.endswith("roadmap.md") for path in notes)
 ```
 
 ## Troubleshooting

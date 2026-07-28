@@ -78,3 +78,6 @@ config/orange_tg_session*
 
 # Local settings
 config/settings.json
+
+# ORANGE execution and attachment staging
+.orange_runtime/

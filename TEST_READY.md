@@ -1,5 +1,7 @@
 # Test Suite Attestation & Verification (TEST_READY)
 
+> Архивный отчет предыдущей реализации. Приведенные ниже количества тестов и компоненты не относятся к текущему runtime. Актуальные проверки перечислены в `README.md` и `.github/workflows/ci.yml`.
+
 This document certifies that the E2E test suite for the Orange Framework has been successfully developed, integrated, and verified to run without hangs under Windows.
 
 ## Test Suite Attestation
